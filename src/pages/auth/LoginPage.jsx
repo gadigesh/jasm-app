@@ -5,10 +5,11 @@ import {
 	useLoginMutation,
 	useSignupMutation,
 } from "../../store/services/userAuthApi";
-
+import { useDispatch } from "react-redux";
+import { addUser } from "../../store/slices/userSlice";
 const LoginPage = () => {
-	const [emailId, setEmail] = useState("");
-	const [password, setPassword] = useState("");
+	const [emailId, setEmail] = useState("12345@gmail.com");
+	const [password, setPassword] = useState("Jiv0x@Secure#2025!");
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
 	const [isLoginForm, setIsLogInForm] = useState(false);
@@ -16,14 +17,16 @@ const LoginPage = () => {
 	const [backendError, setBackendError] = useState("");
 	const [login, { isLoading }] = useLoginMutation();
 	const [signup] = useSignupMutation();
+	const dispatch = useDispatch();
 	const handleLogin = async () => {
 		setBackendError("");
 		try {
 			const response = await login({ emailId, password }).unwrap();
 			console.log("Login success:", response);
+			dispatch(addUser(response));
 			navigate("/dashboard");
 		} catch (err) {
-			setBackendError(err.data?.message || "Login Failed");
+			setBackendError(err.response?.data?.message || "Login Failed");
 		}
 	};
 	const handleSignUp = async () => {
@@ -35,10 +38,11 @@ const LoginPage = () => {
 				firstName,
 				lastName,
 			}).unwrap();
-			console.log("Signup success:", response);
+			console.log("Signup success:", response.data);
+			dispatch(addUser(response.data));
 			navigate("/dashboard");
 		} catch (err) {
-			setBackendError(err.data?.message || "Signup Failed");
+			setBackendError(err.response?.data?.message || "Signup Failed");
 		}
 	};
 	const handleSubmit = (e) => {
