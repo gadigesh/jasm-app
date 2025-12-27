@@ -1,12 +1,11 @@
 import api from "./api"; // Import your base api slice
-import { BASE_URL } from "../../utils/constants";
 
 const userAuthApi = api.injectEndpoints({
 	endpoints: (builder) => ({
 		// SIGN UP
 		signup: builder.mutation({
 			query: (userData) => ({
-				url: BASE_URL + "/signup",
+				url: "/signup",
 				method: "POST",
 				body: userData,
 			}),
@@ -16,7 +15,7 @@ const userAuthApi = api.injectEndpoints({
 		// LOG IN
 		login: builder.mutation({
 			query: (credentials) => ({
-				url: BASE_URL + "/login",
+				url: "/login",
 				method: "POST",
 				body: credentials,
 			}),
@@ -26,7 +25,7 @@ const userAuthApi = api.injectEndpoints({
 		// LOG OUT
 		logout: builder.mutation({
 			query: () => ({
-				url: BASE_URL + "/logout",
+				url: "/logout",
 				method: "POST",
 			}),
 			invalidatesTags: ["User"],
@@ -34,7 +33,7 @@ const userAuthApi = api.injectEndpoints({
 
 		// GET CURRENT USER PROFILE (To check if user is logged in on refresh)
 		getMe: builder.query({
-			query: () => BASE_URL + "/me",
+			query: () => "/me",
 			providesTags: ["User"],
 		}),
 	}),
