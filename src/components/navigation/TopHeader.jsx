@@ -3,8 +3,8 @@ import { Bell, Search, ChevronDown } from "lucide-react";
 import { useSelector } from "react-redux";
 
 const TopHeader = () => {
-	const user = useSelector((state) => state.user);
-
+	const user = useSelector((state) => state.user);	
+	if (!user) return null;
 	return (
 		<header className="h-16 border-b border-[#EEF2F6] bg-white flex items-center justify-between px-8 sticky top-0 z-10 w-full">
 			{/* Search Bar */}
@@ -39,7 +39,7 @@ const TopHeader = () => {
 				<button className="flex items-center space-x-3 hover:bg-gray-50 p-1 rounded-lg transition-colors">
 					<div className="w-9 h-9 rounded-full bg-[#E0F2F1] overflow-hidden border-2 border-[#7C3AED]/20 p-0.5 shadow-sm">
 						<img
-							src={user.photoUrl}
+							src={user.photoUrl || ""}
 							alt="User"
 							className="h-full w-full object-cover rounded-full"
 						/>
