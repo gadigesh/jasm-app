@@ -7,6 +7,8 @@ import ProtectedRoute from "./layouts/ProtectedRoute";
 
 import Login from "./pages/auth/LoginPage";
 import Dashboard from "./pages/dashboard/Dashboard";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 function AppContent() {
 	return (
@@ -30,6 +32,15 @@ function App() {
 	return (
 		<Provider store={store}>
 			<AppContent />
+			<ToastContainer
+				position="top-right"
+				autoClose={3000}
+				closeButton={false}
+				hideProgressBar
+				toastClassName="!bg-transparent !shadow-none"
+				bodyClassName="p-0"
+				style={{ zIndex: 99999 }}
+			/>
 		</Provider>
 	);
 }

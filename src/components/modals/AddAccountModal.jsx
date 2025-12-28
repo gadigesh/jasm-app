@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
+import { showSuccess } from "../../utils/toastMsg";
 
 const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 	const [name, setName] = useState("");
@@ -14,6 +15,7 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 		setName("");
 		setClient("");
 		onClose();
+		showSuccess("Account added successfully");
 	};
 
 	return (
@@ -26,7 +28,9 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 					<X size={20} />
 				</button>
 
-				<h2 className="text-2xl font-bold text-[#1A1C1E] mb-6">Add New Account</h2>
+				<h2 className="text-2xl font-bold text-[#1A1C1E] mb-6">
+					Add New Account
+				</h2>
 
 				<form onSubmit={handleSubmit} className="space-y-6">
 					<div>
@@ -37,9 +41,10 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 							type="text"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
-							className="w-full px-4 py-3 bg-[#F8FAFC] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
+							className="w-full px-4 py-3 bg-[#F8FAFC] text-[#7a7e84] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
 							placeholder="e.g. AMR Hotels"
 							autoFocus
+							required
 						/>
 					</div>
 
@@ -51,8 +56,9 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 							type="text"
 							value={client}
 							onChange={(e) => setClient(e.target.value)}
-							className="w-full px-4 py-3 bg-[#F8FAFC] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
+							className="w-full px-4 py-3 bg-[#F8FAFC] text-[#7a7e84] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
 							placeholder="e.g. 85SIXTY"
+							required
 						/>
 					</div>
 

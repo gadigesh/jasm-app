@@ -34,6 +34,9 @@ const userAuthApi = api.injectEndpoints({
 		// GET CURRENT USER PROFILE (To check if user is logged in on refresh)
 		getMe: builder.query({
 			query: () => "/me",
+			extraOptions: {
+				silent: true,
+			},
 			providesTags: ["User"],
 		}),
 	}),

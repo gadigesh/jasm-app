@@ -4,9 +4,13 @@ import { useDispatch } from "react-redux";
 import Sidebar from "../components/navigation/Sidebar";
 import { removeUser } from "../store/slices/userSlice";
 import TopHeader from "../components/navigation/Topheader";
-import { useGetMeQuery } from "../store/services/userAuthApi";
+import {
+	useGetMeQuery,
+	useLogoutMutation,
+} from "../store/services/userAuthApi";
 import { addUser } from "../store/slices/userSlice";
 import Error from "../components/common/Error";
+import { showSuccess } from "../utils/toastMsg";
 
 const MainLayout = () => {
 	const navigate = useNavigate();
@@ -14,6 +18,7 @@ const MainLayout = () => {
 	const dispatch = useDispatch();
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 	const { data, isSuccess, isLoading } = useGetMeQuery();
+	const [logout] = useLogoutMutation();
 	const fetchUser = async () => {
 		try {
 			if (isSuccess) {
@@ -49,8 +54,10 @@ const MainLayout = () => {
 	};
 
 	const handleLogout = () => {
+		logout().unwrap();
 		dispatch(removeUser());
 		navigate("/login");
+		showSuccess("Logout successful");
 	};
 
 	return (

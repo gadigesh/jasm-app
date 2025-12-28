@@ -82,6 +82,8 @@ const Dashboard = () => {
 			...newAccount,
 		};
 		setCampaigns([account, ...campaigns]);
+		setSortType("recent");
+		setFilterType("all");
 	};
 
 	const displayedCampaigns = useMemo(() => {

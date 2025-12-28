@@ -7,6 +7,7 @@ import {
 } from "../../store/services/userAuthApi";
 import { useDispatch } from "react-redux";
 import { addUser } from "../../store/slices/userSlice";
+import { showError, showSuccess } from "../../utils/toastMsg";
 const LoginPage = () => {
 	const [emailId, setEmail] = useState("12345@gmail.com");
 	const [password, setPassword] = useState("Jiv0x@Secure#2025!");
@@ -14,23 +15,22 @@ const LoginPage = () => {
 	const [lastName, setLastName] = useState("");
 	const [isLoginForm, setIsLogInForm] = useState(false);
 	const navigate = useNavigate();
-	const [backendError, setBackendError] = useState("");
 	const [login, { isLoading }] = useLoginMutation();
 	const [signup] = useSignupMutation();
 	const dispatch = useDispatch();
 	const handleLogin = async () => {
-		setBackendError("");
 		try {
 			const response = await login({ emailId, password }).unwrap();
-			console.log("Login success:", response);
 			dispatch(addUser(response));
 			navigate("/dashboard");
+			showSuccess("Login successful");
 		} catch (err) {
-			setBackendError(err.response?.data?.message || "Login Failed");
+			showError(
+				"Login Failed Please check the entered details once again"
+			);
 		}
 	};
 	const handleSignUp = async () => {
-		setBackendError("");
 		try {
 			const response = await signup({
 				emailId,
@@ -38,11 +38,13 @@ const LoginPage = () => {
 				firstName,
 				lastName,
 			}).unwrap();
-			console.log("Signup success:", response.data);
-			dispatch(addUser(response.data));
+			dispatch(addUser(response));
 			navigate("/dashboard");
+			showSuccess("Signup successful");
 		} catch (err) {
-			setBackendError(err.response?.data?.message || "Signup Failed");
+			showError(
+				"Signup Failed Please check the entered details once again"
+			);
 		}
 	};
 	const handleSubmit = (e) => {
@@ -105,7 +107,6 @@ const LoginPage = () => {
 												type="text"
 												placeholder="Last Name"
 												className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-purple-500"
-												required
 												value={lastName}
 												onChange={(e) =>
 													setLastName(e.target.value)
@@ -152,11 +153,11 @@ const LoginPage = () => {
 										<span>Forgot password?</span>
 									</button>
 								</div>
-								{backendError && (
+								{/* {backendError && (
 									<div className="rounded-md bg-red-5 border border-red-600 p-2 text-sm text-red-600">
 										{backendError}
 									</div>
-								)}
+								)} */}
 								<button
 									type="submit"
 									disabled={isLoading}
