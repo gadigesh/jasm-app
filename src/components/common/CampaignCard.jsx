@@ -1,9 +1,12 @@
 import React from "react";
 import { timeAgo } from "../../utils/constants";
 
-const CampaignCard = ({ name, client, lastUpdated, status }) => {
+const CampaignCard = ({ name, client, lastUpdated, status, onClick }) => {
 	return (
-		<div className="bg-white cursor-pointer rounded-2xl shadow-lg border border-[#EEF2F6] overflow-hidden flex flex-col hover:shadow-2xl transition-shadow">
+		<div
+			onClick={onClick}
+			className="bg-white cursor-pointer rounded-2xl shadow-lg border border-[#EEF2F6] overflow-hidden flex flex-col hover:shadow-2xl transition-shadow"
+		>
 			{/* Top Section */}
 			<div className="p-6 flex justify-between items-start">
 				<div className="flex-1">

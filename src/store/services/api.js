@@ -17,13 +17,12 @@ const baseQueryWithInterceptor = async (args, api, extraOptions) => {
 	// 		showError(errorMessage);
 	// 	}
 	// } else if (result.data) {
-	// 	// Optional: Handling global success message if needed
 	// 	if (api.type === "mutation" && !extraOptions?.silent) {
-	// 		// We can potentially show success messages here if desired
+	// 		showSuccess("Operation successful");
 	// 	}
 	// }
 	return result;
-};
+};	
 
 const api = createApi({
 	reducerPath: "api",

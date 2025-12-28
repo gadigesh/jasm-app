@@ -4,7 +4,10 @@ import PageHeader from "../../components/navigation/PageHeader";
 import AddAccountModal from "../../components/modals/AddAccountModal";
 import { useGetAccountsQuery } from "../../store/services/accounts";
 
+import { useNavigate } from "react-router-dom";
+
 const Dashboard = () => {
+	const navigate = useNavigate();
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [sortType, setSortType] = useState("recent");
 	const [filterType, setFilterType] = useState("all");
@@ -13,6 +16,10 @@ const Dashboard = () => {
 
 	// backend response: { data: [...] }
 	const accounts = data?.data ? data.data : [];
+
+	const handleCardClick = () => {
+		navigate("/assetSources");
+	};
 
 	const displayedCampaigns = useMemo(() => {
 		let result = [...accounts];
@@ -74,6 +81,7 @@ const Dashboard = () => {
 							client={campaign.clientName}
 							lastUpdated={campaign.lastUpdated}
 							status={campaign.accountStatus}
+							onClick={handleCardClick}
 						/>
 					))}
 				</div>

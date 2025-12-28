@@ -81,12 +81,19 @@ const Sidebar = ({
 
 				{/* Asset Sources Link */}
 				<button
-					onClick={() => onNavigate("SOURCE_LIST")}
+					onClick={() => {
+						if (currentView !== "DASHBOARD") {
+							onNavigate("SOURCE_LIST");
+						}
+					}}
+					disabled={currentView === "DASHBOARD"}
 					className={`w-full flex items-center ${
 						isOpen ? "space-x-3 px-4" : "justify-center px-0"
 					} py-3 rounded-lg transition-all ${
 						isAssetSourceActive
 							? "bg-[#B600C9] text-[#fff]"
+							: currentView === "DASHBOARD"
+							? "text-gray-300 cursor-not-allowed opacity-50"
 							: "text-[#64748B] hover:bg-gray-150"
 					}`}
 					title={!isOpen ? "Asset Sources" : ""}
