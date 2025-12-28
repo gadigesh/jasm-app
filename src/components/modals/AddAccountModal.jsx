@@ -1,21 +1,40 @@
 import React, { useState } from "react";
-import { X } from "lucide-react";
-import { showSuccess } from "../../utils/toastMsg";
+import { X, ChevronDown } from "lucide-react";
+import { showSuccess, showError } from "../../utils/toastMsg";
+import { useCreateAccountMutation } from "../../store/services/accounts";
 
-const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
-	const [name, setName] = useState("");
-	const [client, setClient] = useState("");
+const AddAccountModal = ({ isOpen, onClose }) => {
+	const [createAccount, { isLoading }] = useCreateAccountMutation();
+
+	const [accountName, setAccountName] = useState("");
+	const [clientName, setClientName] = useState("");
+	const [accountStatus, setAccountStatus] = useState("Active");
 
 	if (!isOpen) return null;
 
-	const handleSubmit = (e) => {
+	const handleSubmit = async (e) => {
 		e.preventDefault();
-		if (!name || !client) return;
-		onAdd({ name, client, lastUpdated: "Just now" });
-		setName("");
-		setClient("");
-		onClose();
-		showSuccess("Account added successfully");
+		if (!accountName || !clientName) {
+			showError("Account name and client name are required");
+			return;
+		}
+		try {
+			await createAccount({
+				accountName,
+				clientName,
+				accountStatus,
+			}).unwrap();
+			showSuccess("Account created successfully");
+			setAccountName("");
+			setClientName("");
+			setAccountStatus("Active");
+			onClose();
+		} catch (error) {
+			showError(
+				error?.data?.message ||
+					"Failed to create account please check the details"
+			);
+		}
 	};
 
 	return (
@@ -39,8 +58,8 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 						</label>
 						<input
 							type="text"
-							value={name}
-							onChange={(e) => setName(e.target.value)}
+							value={accountName}
+							onChange={(e) => setAccountName(e.target.value)}
 							className="w-full px-4 py-3 bg-[#F8FAFC] text-[#7a7e84] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
 							placeholder="e.g. AMR Hotels"
 							autoFocus
@@ -54,12 +73,34 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 						</label>
 						<input
 							type="text"
-							value={client}
-							onChange={(e) => setClient(e.target.value)}
+							value={clientName}
+							onChange={(e) => setClientName(e.target.value)}
 							className="w-full px-4 py-3 bg-[#F8FAFC] text-[#7a7e84] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all"
 							placeholder="e.g. 85SIXTY"
 							required
 						/>
+					</div>
+
+					<div>
+						<label className="block text-sm font-semibold text-gray-700 mb-2">
+							Status
+						</label>
+						<div className="relative">
+							<select
+								value={accountStatus}
+								onChange={(e) =>
+									setAccountStatus(e.target.value)
+								}
+								className="w-full px-4 py-3 bg-[#F8FAFC] text-[#7a7e84] border border-[#EEF2F6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/20 focus:border-[#7C3AED] transition-all appearance-none"
+							>
+								<option value="Active">Active</option>
+								<option value="Inactive">Inactive</option>
+							</select>
+							<ChevronDown
+								className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none"
+								size={20}
+							/>
+						</div>
 					</div>
 
 					<div className="flex space-x-4 pt-4">
@@ -72,9 +113,10 @@ const AddAccountModal = ({ isOpen, onClose, onAdd }) => {
 						</button>
 						<button
 							type="submit"
+							disabled={isLoading}
 							className="flex-1 px-6 py-3 bg-[#B600C9] text-white font-bold rounded-xl hover:bg-[#9E00AD] shadow-lg shadow-[#B600C9]/20 transition-all"
 						>
-							Create Account
+							{isLoading ? "Creating..." : "Create Account"}
 						</button>
 					</div>
 				</form>

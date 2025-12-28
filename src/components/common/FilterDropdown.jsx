@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ListFilter, Check } from "lucide-react";
 
-const FilterDropdown = ({ onFilter }) => {
+const FilterDropdown = ({ onFilter, currentFilter = "all" }) => {
 	const [isOpen, setIsOpen] = useState(false);
-	const [activeFilter, setActiveFilter] = useState("all");
 	const dropdownRef = useRef(null);
 
 	const options = [
@@ -14,28 +13,33 @@ const FilterDropdown = ({ onFilter }) => {
 
 	useEffect(() => {
 		const handleClickOutside = (event) => {
-			if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+			if (
+				dropdownRef.current &&
+				!dropdownRef.current.contains(event.target)
+			) {
 				setIsOpen(false);
 			}
 		};
 		document.addEventListener("mousedown", handleClickOutside);
-		return () => document.removeEventListener("mousedown", handleClickOutside);
+		return () =>
+			document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
 	const handleSelect = (id) => {
-		setActiveFilter(id);
 		onFilter(id);
 		setIsOpen(false);
 	};
+
+	const isActive = currentFilter !== "all";
 
 	return (
 		<div className="relative" ref={dropdownRef}>
 			<button
 				onClick={() => setIsOpen(!isOpen)}
 				className={`flex items-center space-x-2 px-4 py-2 border rounded-lg transition-all font-medium text-sm ${
-					isOpen 
-                        ? "border-[#7C3AED] bg-purple-50 text-[#7C3AED]" 
-                        : "border-[#EEF2F6] text-[#64748B] hover:border-[#7C3AED] hover:text-[#7C3AED]"
+					isOpen || isActive
+						? "border-[#7C3AED] bg-purple-50 text-[#7C3AED]"
+						: "border-[#EEF2F6] text-[#64748B] hover:border-[#7C3AED] hover:text-[#7C3AED]"
 				}`}
 			>
 				<ListFilter className="h-4 w-4" />
@@ -51,7 +55,9 @@ const FilterDropdown = ({ onFilter }) => {
 							className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-purple-50 hover:text-[#7C3AED] transition-colors"
 						>
 							<span>{option.label}</span>
-							{activeFilter === option.id && <Check className="h-4 w-4 text-[#7C3AED]" />}
+							{currentFilter === option.id && (
+								<Check className="h-4 w-4 text-[#7C3AED]" />
+							)}
 						</button>
 					))}
 				</div>

@@ -15,12 +15,15 @@ function AppContent() {
 		<BrowserRouter>
 			<Routes>
 				{/* Public */}
-				<Route path="/login" element={<Login />} />
+				<Route path="/login" element={<Login replace />} />
 
 				{/* Protected */}
 				<Route element={<ProtectedRoute />}>
 					<Route path="/" element={<MainLayout />}>
-						<Route path="dashboard" element={<Dashboard />} />
+						<Route
+							path="dashboard"
+							element={<Dashboard replace />}
+						/>
 					</Route>
 				</Route>
 			</Routes>

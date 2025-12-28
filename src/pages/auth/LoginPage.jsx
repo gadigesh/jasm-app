@@ -22,7 +22,9 @@ const LoginPage = () => {
 		try {
 			const response = await login({ emailId, password }).unwrap();
 			dispatch(addUser(response));
-			navigate("/dashboard");
+			navigate("/dashboard", {
+				replace: true,
+			});
 			showSuccess("Login successful");
 		} catch (err) {
 			showError(
@@ -39,7 +41,9 @@ const LoginPage = () => {
 				lastName,
 			}).unwrap();
 			dispatch(addUser(response));
-			navigate("/dashboard");
+			navigate("/dashboard", {
+				replace: true,
+			});
 			showSuccess("Signup successful");
 		} catch (err) {
 			showError(

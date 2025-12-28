@@ -26,7 +26,9 @@ const MainLayout = () => {
 			}
 		} catch (error) {
 			if (error.response.status === 401) {
-				navigate("/login");
+				navigate("/login", {
+					replace: true,
+				});
 			}
 		}
 	};
@@ -56,7 +58,9 @@ const MainLayout = () => {
 	const handleLogout = () => {
 		logout().unwrap();
 		dispatch(removeUser());
-		navigate("/login");
+		navigate("/login", {
+			replace: true,
+		});
 		showSuccess("Logout successful");
 	};
 

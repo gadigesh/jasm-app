@@ -9,6 +9,8 @@ const PageHeader = ({
 	actionLabel,
 	onSort,
 	onFilter,
+	currentSort,
+	currentFilter,
 }) => {
 	return (
 		<div className="bg-white px-8 py-5 border-b border-[#EEF2F6] flex items-center justify-between sticky top-0 z-10 w-full">
@@ -17,8 +19,11 @@ const PageHeader = ({
 
 			{/* Action Buttons */}
 			<div className="flex items-center space-x-3">
-				<SortDropdown onSort={onSort} />
-				<FilterDropdown onFilter={onFilter} />
+				<SortDropdown onSort={onSort} currentSort={currentSort} />
+				<FilterDropdown
+					onFilter={onFilter}
+					currentFilter={currentFilter}
+				/>
 
 				<button
 					onClick={onAddAction}
