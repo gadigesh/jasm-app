@@ -190,7 +190,7 @@ const LoginPage = () => {
 							</div>
 
 							<div className="mt-8 text-center text-xs text-slate-400">
-								© 2025 Asset Source Creator. All rights
+								© 2025 Asset Source Manager. All rights
 								reserved.
 							</div>
 						</div>

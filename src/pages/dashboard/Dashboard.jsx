@@ -3,6 +3,11 @@ import CampaignCard from "../../components/common/CampaignCard";
 import PageHeader from "../../components/navigation/PageHeader";
 import AddAccountModal from "../../components/modals/AddAccountModal";
 import { useGetAccountsQuery } from "../../store/services/accounts";
+import {
+	SortAction,
+	FilterAction,
+	AddButton,
+} from "../../components/navigation/HeaderActions";
 
 import { useNavigate } from "react-router-dom";
 
@@ -18,7 +23,7 @@ const Dashboard = () => {
 	const accounts = data?.data ? data.data : [];
 
 	const handleCardClick = () => {
-		navigate("/assetSources");
+		navigate("/asset-sources/templates");
 	};
 
 	const displayedCampaigns = useMemo(() => {
@@ -50,12 +55,23 @@ const Dashboard = () => {
 		<div className="flex flex-col h-full bg-[#F8FAFC]">
 			<PageHeader
 				title="Dashboard"
-				onAddAction={() => setIsModalOpen(true)}
-				actionLabel="Add Account"
-				onSort={setSortType}
-				onFilter={setFilterType}
-				currentSort={sortType}
-				currentFilter={filterType}
+				actions={[
+					<SortAction
+						key="SortAction"
+						onSort={setSortType}
+						currentSort={sortType}
+					/>,
+					<FilterAction
+						key="FilterAction"
+						onFilter={setFilterType}
+						currentFilter={filterType}
+					/>,
+					<AddButton
+						key="AddButton"
+						label="Add Account"
+						onClick={() => setIsModalOpen(true)}
+					/>,
+				]}
 			/>
 
 			<div className="flex-1 p-8 overflow-auto">

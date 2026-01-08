@@ -6,9 +6,11 @@ import {
 	UserCog,
 	ArrowRight,
 } from "lucide-react";
-import PageHeader from "../../../components/navigation/PageHeader";
-import AsTemplateCard from "../../../components/common/AsTemplateCard";
+import PageHeader from "../../components/navigation/PageHeader";
+import AsTemplateCard from "../../components/common/AsTemplateCard";
 import { useNavigate } from "react-router-dom";
+import { AddButton } from "../../components/navigation/HeaderActions";
+import AddASTemplate from "../../components/modals/AddASTemplate";
 
 const templates = [
 	{
@@ -53,26 +55,33 @@ const templates = [
 	},
 ];
 
-const AssetSourceRoot = () => {
+const AssetSourceTemplate = () => {
 	const navigate = useNavigate();
 	const [selectedId, setSelectedId] = useState(null);
+	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [isLoading, setIsLoading] = useState(true);
 
 	const handleSelect = (id) => {
 		setSelectedId(id);
 	};
 
 	const handleNext = () => {
-		navigate("/assetSourceRoot/Step1Template");
+		navigate("/asset-sources/create/" + selectedId);
 	};
 
 	return (
 		<div className="flex flex-col h-full bg-[#fcfcfc] relative">
 			<PageHeader
-				title="Asset source template select"
-				onAddAction={() => {}}
-				actionLabel="Add Template"
-				onSort={() => {}}
-				onFilter={() => {}}
+				title="Define Asset Source"
+				subtitle="Select how you want to structure your asset data..."
+				actions={[
+					<AddButton
+						key={"add-template"}
+						label="Add Template"
+						disabled={isLoading}
+						onClick={() => setIsModalOpen(true)}
+					/>,
+				]}
 			/>
 			{/* Content */}
 			<div className="flex flex-wrap gap-8 p-8 flex-1 overflow-auto">
@@ -89,7 +98,10 @@ const AssetSourceRoot = () => {
 					/>
 				))}
 			</div>
-
+			<AddASTemplate
+				isOpen={isModalOpen}
+				onClose={() => setIsModalOpen(false)}
+			/>
 			<div className="absolute bottom-0 right-0 flex justify-end p-8">
 				<button
 					disabled={!selectedId}
@@ -108,4 +120,4 @@ const AssetSourceRoot = () => {
 	);
 };
 
-export default AssetSourceRoot;
+export default AssetSourceTemplate;

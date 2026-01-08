@@ -5,23 +5,34 @@ import MainLayout from "./layouts/MainLayout";
 import ProtectedRoute from "./layouts/ProtectedRoute";
 import Login from "./pages/auth/LoginPage";
 import Dashboard from "./pages/dashboard/Dashboard";
+import AssetSourceTemplate from "./pages/assetSources/AssetSourceTemplate";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import ASCreateLayout from "./pages/assetSources/ASCreateLayout";
+import AssetSourceList from "./pages/assetSources/AssetSourceList";
 
 function AppContent() {
 	return (
 		<BrowserRouter>
 			<Routes>
 				{/* Public */}
-				<Route path="/login" element={<Login replace />} />
+				<Route path="/login" element={<Login />} />
 
 				{/* Protected */}
 				<Route element={<ProtectedRoute />}>
 					<Route path="/" element={<MainLayout />}>
+						<Route index element={<Dashboard />} />
+						<Route path="dashboard" element={<Dashboard />} />
 						<Route
-							path="dashboard"
-							element={<Dashboard replace />}
+							path="asset-sources/templates"
+							element={<AssetSourceTemplate />}
 						/>
+						<Route
+							path="asset-sources/create/:templateId"
+							element={<ASCreateLayout />}
+						>
+							<Route index element={<AssetSourceList />} />
+						</Route>
 					</Route>
 				</Route>
 			</Routes>

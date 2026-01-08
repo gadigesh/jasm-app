@@ -1,4 +1,4 @@
-export const BASE_URL = "http://localhost:3333";
+//export const BASE_URL = "https://jasm-app-sever.onrender.com";
 
 export const timeAgo = (date) => {
 	const diff = Date.now() - new Date(date).getTime();

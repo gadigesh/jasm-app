@@ -6,3 +6,6 @@
 	- Install react router dom
 	- Create BrowserRouter > Routes > Rout =/ Body > RoutChildren
 	- Outlet is created
+	- Create MainLayout
+	- Create ProtectedRoute
+	

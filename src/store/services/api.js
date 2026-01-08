@@ -1,6 +1,10 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import { BASE_URL } from "../../utils/constants";
 import { showSuccess, showError } from "../../utils/toastMsg";
+
+const BASE_URL =
+	process.env.NODE_ENV === "production"
+		? "https://jasm-app-sever.onrender.com"
+		: "http://localhost:3333";
 
 const baseQuery = fetchBaseQuery({
 	baseUrl: BASE_URL,
@@ -22,7 +26,7 @@ const baseQueryWithInterceptor = async (args, api, extraOptions) => {
 	// 	}
 	// }
 	return result;
-};	
+};
 
 const api = createApi({
 	reducerPath: "api",

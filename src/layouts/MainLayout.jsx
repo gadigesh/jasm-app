@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import Sidebar from "../components/navigation/Sidebar";
 import { removeUser } from "../store/slices/userSlice";
@@ -11,10 +11,10 @@ import {
 import { addUser } from "../store/slices/userSlice";
 import Error from "../components/common/Error";
 import { showSuccess } from "../utils/toastMsg";
+import Footer from "../components/navigation/Footer";
 
 const MainLayout = () => {
 	const navigate = useNavigate();
-	const location = useLocation();
 	const dispatch = useDispatch();
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 	const { data, isSuccess, isLoading } = useGetMeQuery();
@@ -35,26 +35,6 @@ const MainLayout = () => {
 	useEffect(() => {
 		fetchUser();
 	}, []);
-	// Determine current view for sidebar highlighting
-	const currentPath = location.pathname;
-	let currentView = "DASHBOARD";
-	let pageTitle = "Dashboard";
-
-	if (currentPath.includes("/asset-sources")) {
-		currentView = "SOURCE_LIST";
-		pageTitle = "Asset Sources";
-	}
-	if (currentPath.includes("/settings")) {
-		currentView = "SETTINGS";
-		pageTitle = "Settings";
-	}
-
-	const handleNavigate = (view) => {
-		if (view === "DASHBOARD") navigate("/dashboard");
-		if (view === "SOURCE_LIST") navigate("/asset-sources");
-		if (view === "SETTINGS") navigate("/settings");
-	};
-
 	const handleLogout = () => {
 		logout().unwrap();
 		dispatch(removeUser());
@@ -67,8 +47,6 @@ const MainLayout = () => {
 	return (
 		<div className="flex w-screen h-screen bg-[#F8FAFC] overflow-hidden">
 			<Sidebar
-				currentView={currentView}
-				onNavigate={handleNavigate}
 				onLogout={handleLogout}
 				isOpen={isSidebarOpen}
 				toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -86,6 +64,7 @@ const MainLayout = () => {
 						<Outlet />
 					)}
 				</main>
+				<Footer />
 			</div>
 		</div>
 	);
