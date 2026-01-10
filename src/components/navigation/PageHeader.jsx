@@ -1,9 +1,9 @@
 import Breadcrumbs from "./BreadCrumbs";
 
-const PageHeader = ({ title, subtitle, actions = [] }) => {
+const PageHeader = ({ title, subtitle, actions = [], breadcrumbs = [] }) => {
 	return (
-		<div className="bg-white px-8 py-4 border-b sticky top-0 z-10">
-			<Breadcrumbs />
+		<div className="bg-white px-8 py-2 border-b sticky top-0 z-50">
+			<Breadcrumbs items={breadcrumbs} />
 
 			<div className="flex justify-between items-center">
 				<div>

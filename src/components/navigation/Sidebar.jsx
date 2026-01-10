@@ -50,8 +50,10 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 					<img
 						src="https://jvx.app.jivox.com/studio/images/jivox_logo.png"
 						alt="Jivox"
-						className={`transition-all duration-300 absolute top-4 left-8 ${
-							isOpen ? "h-8  w-26" : "h-4 w-10 top-6 left-3.5"
+						className={`transition-all duration-300 absolute top-4 ${
+							isOpen
+								? "h-8  w-26  left-8"
+								: "h-4 w-10 top-6 left-3"
 						}`}
 					/>
 				</div>

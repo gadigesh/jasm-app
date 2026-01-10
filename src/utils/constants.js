@@ -12,3 +12,70 @@ export const timeAgo = (date) => {
 	if (hr < 24) return `${hr} hr ago`;
 	return `${day} day${day > 1 ? "s" : ""} ago`;
 };
+
+// src/utils/constants.jsx
+export const asListTableHeaders = [
+	{
+		key: "name",
+		label: "Name",
+	},
+	{
+		key: "updatedAt",
+		label: "Last updated",
+	},
+	{
+		key: "updatedBy",
+		label: "Updated by",
+	},
+	{
+		key: "status",
+		label: "Status"
+	}
+];
+
+import {
+	FileSpreadsheet,
+	ShoppingBag,
+	Hand,
+	UserCog,
+	ShoppingCart,
+	Target,
+	Share2,
+	Settings,
+	ArrowRight,
+	User,
+} from "lucide-react";
+
+export const ICON_MAP = {
+	FileSpreadsheet,
+	ShoppingBag,
+	Hand,
+	UserCog,
+	ShoppingCart,
+	Target,
+	Share2,
+	Settings,
+	ArrowRight,
+	User
+};
+
+export const NAVIGATION_META = {
+	dashboard: {
+		label: "Dashboard",
+		path: "/dashboard",
+	},
+	asset_source: {
+		label: "Asset Source",
+		path: "/asset-sources/create",
+	},
+	asset_source_template: {
+		label: "Asset Source Template",
+		path: "/asset-sources/templates",
+	},
+};
+
+
+
+
+
+

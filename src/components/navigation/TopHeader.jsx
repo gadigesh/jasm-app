@@ -36,7 +36,7 @@ const TopHeader = () => {
 	};
 
 	return (
-		<header className="h-16 border-b border-[#EEF2F6] bg-white flex items-center justify-between px-8 sticky top-0 z-40 w-full">
+		<header className="h-16 border-b border-[#EEF2F6] bg-white flex items-center justify-between px-8 sticky top-0 z-[60] w-full">
 			{/* Search Bar */}
 			<div className="relative w-96">
 				<div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">

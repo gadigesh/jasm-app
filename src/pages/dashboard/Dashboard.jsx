@@ -2,7 +2,10 @@ import React, { useState, useMemo } from "react";
 import CampaignCard from "../../components/common/CampaignCard";
 import PageHeader from "../../components/navigation/PageHeader";
 import AddAccountModal from "../../components/modals/AddAccountModal";
-import { useGetAccountsQuery } from "../../store/services/accounts";
+import {
+	useGetAccountsQuery,
+	useSwitchAccountMutation,
+} from "../../store/services/accounts";
 import {
 	SortAction,
 	FilterAction,
@@ -21,8 +24,10 @@ const Dashboard = () => {
 
 	// backend response: { data: [...] }
 	const accounts = data?.data ? data.data : [];
+	const [switchAccount] = useSwitchAccountMutation();
 
-	const handleCardClick = () => {
+	const handleCardClick = async (accountId) => {
+		await switchAccount(accountId);
 		navigate("/asset-sources/templates");
 	};
 
@@ -97,7 +102,7 @@ const Dashboard = () => {
 							client={campaign.clientName}
 							lastUpdated={campaign.lastUpdated}
 							status={campaign.accountStatus}
-							onClick={handleCardClick}
+							onClick={() => handleCardClick(campaign.id)}
 						/>
 					))}
 				</div>

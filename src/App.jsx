@@ -8,7 +8,7 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import AssetSourceTemplate from "./pages/assetSources/AssetSourceTemplate";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import ASCreateLayout from "./pages/assetSources/ASCreateLayout";
+import ASCreateLayout from "./layouts/ASCreateLayout";
 import AssetSourceList from "./pages/assetSources/AssetSourceList";
 
 function AppContent() {

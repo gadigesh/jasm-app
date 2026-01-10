@@ -1,65 +1,19 @@
-import React, { useState, useEffect } from "react";
-import {
-	FileSpreadsheet,
-	ShoppingBag,
-	Hand,
-	UserCog,
-	ArrowRight,
-} from "lucide-react";
+import React, { useState } from "react";
+import { ArrowRight } from "lucide-react";
 import PageHeader from "../../components/navigation/PageHeader";
 import AsTemplateCard from "../../components/common/AsTemplateCard";
 import { useNavigate } from "react-router-dom";
 import { AddButton } from "../../components/navigation/HeaderActions";
 import AddASTemplate from "../../components/modals/AddASTemplate";
-
-const templates = [
-	{
-		id: "dynamic",
-		title: "Dynamic",
-		desc: "Standard row-column structure optimized for Google Sheets and Excel exports.",
-		icon: FileSpreadsheet,
-		iconColor: "text-orange-500",
-		iconBg: "bg-orange-100/50",
-	},
-	{
-		id: "ecommerce",
-		title: "E-commerce",
-		desc: "Designed for product feeds including SKU, pricing, variants, and image galleries.",
-		icon: ShoppingBag,
-		iconColor: "text-red-500",
-		iconBg: "bg-red-100/50",
-	},
-	{
-		id: "social",
-		title: "Social",
-		desc: "Templates for ad creatives, copy variations, targeting parameters, and CTA links.",
-		icon: Hand,
-		iconColor: "text-blue-500",
-		iconBg: "bg-blue-100/50",
-	},
-	{
-		id: "RMA",
-		title: "RMA",
-		desc: "Structures for subject lines, pre-headers, body copy, and dynamic fields.",
-		icon: UserCog,
-		iconColor: "text-teal-500",
-		iconBg: "bg-teal-100/50",
-	},
-	{
-		id: "Tempaltes",
-		title: "Templates",
-		desc: "Designed for product feeds including SKU, pricing, variants, and image galleries.",
-		icon: ShoppingBag,
-		iconColor: "text-red-500",
-		iconBg: "bg-red-100/50",
-	},
-];
+import { useGetAssetTemplatesQuery } from "../../store/services/assetTemplate";
+import { ICON_MAP } from "../../utils/constants";
+import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 
 const AssetSourceTemplate = () => {
 	const navigate = useNavigate();
+	const breadcrumbs = useBreadcrumbs();
 	const [selectedId, setSelectedId] = useState(null);
 	const [isModalOpen, setIsModalOpen] = useState(false);
-	const [isLoading, setIsLoading] = useState(true);
 
 	const handleSelect = (id) => {
 		setSelectedId(id);
@@ -69,26 +23,30 @@ const AssetSourceTemplate = () => {
 		navigate("/asset-sources/create/" + selectedId);
 	};
 
+	const { data: templates, isLoading: templatesLoading } =
+		useGetAssetTemplatesQuery();
+
 	return (
 		<div className="flex flex-col h-full bg-[#fcfcfc] relative">
 			<PageHeader
+				breadcrumbs={breadcrumbs}
 				title="Define Asset Source"
 				subtitle="Select how you want to structure your asset data..."
 				actions={[
 					<AddButton
 						key={"add-template"}
 						label="Add Template"
-						disabled={isLoading}
+						disabled={!templatesLoading}
 						onClick={() => setIsModalOpen(true)}
 					/>,
 				]}
 			/>
 			{/* Content */}
 			<div className="flex flex-wrap gap-8 p-8 flex-1 overflow-auto">
-				{templates.map((template) => (
+				{templates?.map((template) => (
 					<AsTemplateCard
 						key={template.id}
-						Icon={template.icon}
+						Icon={ICON_MAP[template.icon]}
 						iconBg={template.iconBg}
 						iconColor={template.iconColor}
 						title={template.title}

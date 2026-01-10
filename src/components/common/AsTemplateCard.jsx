@@ -22,10 +22,14 @@ const AsTemplateCard = ({
 				<div
 					className={`w-12 h-12 ${iconBg} rounded-xl flex items-center justify-center shrink-0`}
 				>
-					<Icon
-						className={`w-6 h-6 ${iconColor}`}
-						strokeWidth={2.5}
-					/>
+					{Icon ? (
+						<Icon
+							className={`w-6 h-6 ${iconColor}`}
+							strokeWidth={2.5}
+						/>
+					) : (
+						<div className="w-5 h-5 bg-gray-300 rounded" />
+					)}
 				</div>
 				<div
 					className={`w-6 h-6 rounded-full border-[2px] transition-all flex items-center justify-center ${

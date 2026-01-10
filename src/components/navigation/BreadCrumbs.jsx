@@ -1,27 +1,38 @@
+import { ChevronsRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useBreadCrumbs } from "../../hooks/useBreadCrumbs";
 
-const BreadCrumbs = () => {
-	const crumbs = useBreadCrumbs();
-
-	if (!crumbs.length) return null;
-
+const Breadcrumb = ({ items = [] }) => {
 	return (
-		<div className="text-sm text-[#6B7280] mb-1 flex items-center gap-1">
-			{crumbs.map((crumb, idx) => (
-				<span key={crumb.path}>
-					{idx > 0 && <span className="mx-1">›</span>}
-					{idx === crumbs.length - 1 ? (
-						<span className="text-[#7C3AED]">{crumb.label}</span>
-					) : (
-						<Link to={crumb.path} className="hover:underline">
-							{crumb.label}
-						</Link>
-					)}
-				</span>
-			))}
-		</div>
+		<nav className="flex items-center text-sm text-gray-500">
+			{items.map((item, index) => {
+				const isLast = index === items.length - 1;
+
+				return (
+					<div key={item.label} className="flex items-center">
+						{index !== 0 && (
+							<ChevronsRight
+								size={18}
+								className="mx-2 text-gray-400"
+							/>
+						)}
+
+						{isLast || !item.to ? (
+							<span className="text-gray-900 font-medium">
+								{item.label}
+							</span>
+						) : (
+							<Link
+								to={item.to}
+								className="hover:text-purple-600 transition-colors"
+							>
+								{item.label}
+							</Link>
+						)}
+					</div>
+				);
+			})}
+		</nav>
 	);
 };
 
-export default BreadCrumbs;
+export default Breadcrumb;

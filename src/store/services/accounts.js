@@ -15,7 +15,19 @@ const accountsApi = api.injectEndpoints({
 			}),
 			invalidatesTags: ["Accounts"],
 		}),
+		switchAccount: builder.mutation({
+			query: (accountId) => ({
+				url: "/switch-account",
+				method: "POST",
+				body: { accountId },
+			}),
+			invalidatesTags: ["User"], // 🔥 refetch /me
+		}),
 	}),
 });
 
-export const { useCreateAccountMutation, useGetAccountsQuery } = accountsApi;
+export const {
+	useCreateAccountMutation,
+	useGetAccountsQuery,
+	useSwitchAccountMutation,
+} = accountsApi;
