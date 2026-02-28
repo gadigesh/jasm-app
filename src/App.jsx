@@ -5,10 +5,8 @@ import MainLayout from "./layouts/MainLayout";
 import ProtectedRoute from "./layouts/ProtectedRoute";
 import Login from "./pages/auth/LoginPage";
 import Dashboard from "./pages/dashboard/Dashboard";
-import AssetSourceTemplate from "./pages/assetSources/AssetSourceTemplate";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import ASCreateLayout from "./layouts/ASCreateLayout";
 import AssetSourceList from "./pages/assetSources/AssetSourceList";
 
 function AppContent() {
@@ -24,15 +22,9 @@ function AppContent() {
 						<Route index element={<Dashboard />} />
 						<Route path="dashboard" element={<Dashboard />} />
 						<Route
-							path="asset-sources/templates"
-							element={<AssetSourceTemplate />}
+							path="asset-sources"
+							element={<AssetSourceList />}
 						/>
-						<Route
-							path="asset-sources/create/:templateId"
-							element={<ASCreateLayout />}
-						>
-							<Route index element={<AssetSourceList />} />
-						</Route>
 					</Route>
 				</Route>
 			</Routes>

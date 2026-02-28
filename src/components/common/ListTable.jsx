@@ -1,9 +1,9 @@
-import React from "react";
+import { useState, useRef } from "react";
 import { Pencil, Copy, Download, Trash } from "lucide-react";
 
 const ListTable = ({ columns = [], rows = [], loading = false }) => {
-	const [scrolled, setScrolled] = React.useState(false);
-	const scrollRef = React.useRef(null);
+	const [scrolled, setScrolled] = useState(false);
+	const scrollRef = useRef(null);
 
 	const handleScroll = (e) => {
 		setScrolled(e.target.scrollTop > 0);
@@ -50,7 +50,12 @@ const ListTable = ({ columns = [], rows = [], loading = false }) => {
 												key={col.key}
 												className="px-4 py-3 truncate max-w-[240px]"
 											>
-												{row[col.key]}
+												{col.render
+													? col.render(
+															row[col.key],
+															row
+													  )
+													: row[col.key]}
 											</td>
 										))}
 										<td className="px-4 py-3 text-center">

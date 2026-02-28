@@ -8,30 +8,22 @@ const useBreadcrumbs = () => {
 
 	const breadcrumbs = [];
 
-	// 1️⃣ Dashboard (root)
+	// 1️ Dashboard (root)
 	breadcrumbs.push({
 		label: NAVIGATION_META.dashboard.label,
 		to: NAVIGATION_META.dashboard.path,
 	});
 
-	// 2️⃣ Active Account (clicked account)
+	// 2️ Active Account (clicked account)
 	if (data?.activeAccount?.accountName) {
 		breadcrumbs.push({
 			label: data.activeAccount.accountName,
-			to: `/asset-sources/templates`,
+			to: `/asset-sources`,
 		});
 	}
 
-	// 3️⃣ Asset Source module (ALL sub routes)
-	if (location.pathname.startsWith("/asset-sources/templates")) {
-		breadcrumbs.push({
-			label: NAVIGATION_META.asset_source_template.label,
-			to: NAVIGATION_META.asset_source_template.path,
-		});
-	}
-
-	// 4️⃣ Asset Source Template (ALL sub routes)
-	if (location.pathname.startsWith("/asset-sources/create/")) {
+	// 3️ Asset Source List
+	if (location.pathname.startsWith("/asset-sources")) {
 		breadcrumbs.push({
 			label: NAVIGATION_META.asset_source.label,
 			to: NAVIGATION_META.asset_source.path,
@@ -39,6 +31,6 @@ const useBreadcrumbs = () => {
 	}
 
 	return breadcrumbs;
-};
+};;
 
 export default useBreadcrumbs;

@@ -14,7 +14,6 @@ const PageHeader = ({ title, subtitle, actions = [], breadcrumbs = [] }) => {
 						<p className="text-sm text-gray-500">{subtitle}</p>
 					)}
 				</div>
-
 				<div className="flex gap-3">{actions}</div>
 			</div>
 		</div>

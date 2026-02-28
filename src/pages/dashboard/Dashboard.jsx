@@ -28,7 +28,7 @@ const Dashboard = () => {
 
 	const handleCardClick = async (accountId) => {
 		await switchAccount(accountId);
-		navigate("/asset-sources/templates");
+		navigate("/asset-sources");
 	};
 
 	const displayedCampaigns = useMemo(() => {
@@ -107,7 +107,6 @@ const Dashboard = () => {
 					))}
 				</div>
 			</div>
-
 			<AddAccountModal
 				isOpen={isModalOpen}
 				onClose={() => setIsModalOpen(false)}

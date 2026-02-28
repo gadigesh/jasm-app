@@ -25,6 +25,7 @@ const AssetSourceTemplate = () => {
 
 	const { data: templates, isLoading: templatesLoading } =
 		useGetAssetTemplatesQuery();
+	console.log("TEMPLATES DATA:", templates);
 
 	return (
 		<div className="flex flex-col h-full bg-[#fcfcfc] relative">

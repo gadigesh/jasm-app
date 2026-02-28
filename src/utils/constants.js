@@ -65,12 +65,8 @@ export const NAVIGATION_META = {
 		path: "/dashboard",
 	},
 	asset_source: {
-		label: "Asset Source",
-		path: "/asset-sources/create",
-	},
-	asset_source_template: {
-		label: "Asset Source Template",
-		path: "/asset-sources/templates",
+		label: "Asset Sources",
+		path: "/asset-sources",
 	},
 };
 

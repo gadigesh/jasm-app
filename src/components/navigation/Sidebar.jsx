@@ -18,9 +18,9 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 	const isSettings = pathname.startsWith("/settings");
 	const handleNavigate = (view) => {
 		if (view === "DASHBOARD") navigate("/dashboard");
-		if (view === "SOURCE_LIST") navigate("/asset-sources/templates");
+		if (view === "SOURCE_LIST") navigate("/asset-sources");
 		if (view === "SETTINGS") navigate("/settings");
-	};
+	}; 
 
 	return (
 		<div
