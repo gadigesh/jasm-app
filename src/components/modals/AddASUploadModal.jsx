@@ -5,11 +5,15 @@ import { CloudUpload, Link as LinkIcon, Edit, Upload } from "lucide-react";
 import { showSuccess, showError } from "../../utils/toastMsg";
 import { useDropzone } from "react-dropzone";
 
-const AddASUploadModal = ({ isOpen, onClose }) => {
+const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 	const [uploadAssetSource, { isLoading }] = useUploadAssetSourceMutation();
 	const [activeTab, setActiveTab] = useState("file"); // 'file' or 'url'
 	const [file, setFile] = useState(null);
 	const [url, setUrl] = useState("");
+
+	// New required fields
+	const [assetName, setAssetName] = useState("");
+	const [uniqueColumn, setUniqueColumn] = useState("");
 
 	const onDrop = useCallback((acceptedFiles) => {
 		if (acceptedFiles?.length) {
@@ -31,6 +35,14 @@ const AddASUploadModal = ({ isOpen, onClose }) => {
 	});
 
 	const handleSubmit = async () => {
+		if (!assetName.trim()) {
+			showError("Please enter an asset name");
+			return;
+		}
+		if (!uniqueColumn.trim()) {
+			showError("Please enter the unique column (primary key)");
+			return;
+		}
 		if (activeTab === "file" && !file) {
 			showError("Please select a file to upload");
 			return;
@@ -41,24 +53,37 @@ const AddASUploadModal = ({ isOpen, onClose }) => {
 		}
 
 		const formData = new FormData();
+		formData.append("accountId", accountId);
+		formData.append("assetName", assetName.trim());
+		formData.append("uniqueColumn", uniqueColumn.trim());
+
 		if (activeTab === "file") {
+			formData.append("inputType", "file");
 			formData.append("file", file);
 		} else {
-			formData.append("fileUrl", url);
+			formData.append("inputType", "gsheet");
+			formData.append("fileRef", url);
 		}
 
 		try {
-			await uploadAssetSource(formData).unwrap();
-			showSuccess("Asset source uploaded successfully");
+			const result = await uploadAssetSource(formData).unwrap();
+			showSuccess(result?.message || "Upload completed successfully");
 			handleClose();
 		} catch (error) {
-			showError(error?.data?.message || "Failed to upload asset source");
+			showError(
+				error?.data?.message ||
+				error?.data?.error ||
+				error?.error ||
+				"Failed to upload asset source"
+			);
 		}
 	};
 
 	const handleClose = () => {
 		setFile(null);
 		setUrl("");
+		setAssetName("");
+		setUniqueColumn("");
 		setActiveTab("file");
 		onClose();
 	};
@@ -73,6 +98,36 @@ const AddASUploadModal = ({ isOpen, onClose }) => {
 		>
 			<p className="text-gray-500 mb-4">Add your Asset source here.</p>
 
+			{/* Asset Name + Unique Column */}
+			<div className="grid grid-cols-2 gap-4 mb-4">
+				<div>
+					<label className="block text-sm font-bold text-gray-900 mb-1">
+						Asset Name <span className="text-red-500">*</span>
+					</label>
+					<input
+						type="text"
+						value={assetName}
+						onChange={(e) => setAssetName(e.target.value)}
+						placeholder="e.g. Summer Campaign"
+						autoComplete="new-password"
+						className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm text-gray-900"
+					/>
+				</div>
+				<div>
+					<label className="block text-sm font-bold text-gray-900 mb-1">
+						Unique Column <span className="text-red-500">*</span>
+					</label>
+					<input
+						type="text"
+						value={uniqueColumn}
+						onChange={(e) => setUniqueColumn(e.target.value)}
+						placeholder="e.g. SKU or product_id"
+						autoComplete="new-password"
+						className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm text-gray-900"
+					/>
+				</div>
+			</div>
+
 			{/* Drag & Drop Zone */}
 			<div
 				{...getRootProps()}
@@ -83,8 +138,8 @@ const AddASUploadModal = ({ isOpen, onClose }) => {
 						isDragActive
 							? "border-indigo-500 bg-indigo-50"
 							: activeTab === "file" && file
-								? "border-green-500 bg-green-50"
-								: "border-indigo-200 hover:border-indigo-400 bg-white"
+							? "border-green-500 bg-green-50"
+							: "border-indigo-200 hover:border-indigo-400 bg-white"
 					}
 				`}
 			>

@@ -2,33 +2,34 @@ import api from "./api";
 
 const assetUpload = api.injectEndpoints({
 	endpoints: (builder) => ({
-		// 1. GET ALL UPLOADS
+		// 1. GET ALL UPLOADS — requires accountId from active session
 		getAssetUploads: builder.query({
-			query: () => "/assetSource", // Adjust path based on your backend routes
-			providesTags: ["AssetUploads"], // Uses your existing tag
+			query: (accountId) => `/list/${accountId}`,
+			transformResponse: (response) => response.data ?? [],
+			providesTags: ["AssetUploads"],
 		}),
 
-		// 2. RETRY / REPLACE FILE
+		// 2. RETRY / REPLACE FILE — PUT /retry/:id
 		retryUpload: builder.mutation({
 			query: ({ id, formData }) => ({
-				url: `/assetSource/retry/${id}`,
+				url: `/retry/${id}`,
 				method: "PUT",
 				body: formData,
 			}),
-			invalidatesTags: ["AssetUploads"], // Triggers refresh of getAssetUploads
+			invalidatesTags: ["AssetUploads"],
 		}),
 
-		// 3. CREATE NEW UPLOAD
+		// 3. CREATE NEW UPLOAD — POST /upload
 		uploadAssetSource: builder.mutation({
 			query: (formData) => ({
-				url: "/asset-upload",
+				url: "/upload",
 				method: "POST",
 				body: formData,
 			}),
 			invalidatesTags: ["AssetUploads"],
 		}),
 	}),
-	overrideExisting: false,
+	overrideExisting: true,
 });
 
 export const {

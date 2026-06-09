@@ -24,15 +24,17 @@ const AssetSourceList = () => {
 	const [sortBy, setSortBy] = useState("recent");
 	const [filterStatus, setFilterStatus] = useState("all");
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-	const uploaderName = useGetMeQuery();
+	const { data: meData } = useGetMeQuery();
+	const activeAccountId = meData?.activeAccount?._id;
 
-	// 1. FETCH DATA (With Polling)
-	// pollingInterval: 5000 -> Checks for status updates every 5 seconds
+	// 1. FETCH DATA (skip until we have an accountId)
 	const {
 		data: uploads = [],
 		isLoading,
 		isFetching,
-	} = useGetAssetUploadsQuery();
+	} = useGetAssetUploadsQuery(activeAccountId, {
+		skip: !activeAccountId,
+	});
 
 	// 2. MUTATION (Retry Upload)
 	const [retryUpload, { isLoading: isRetrying }] = useRetryUploadMutation();
@@ -261,6 +263,7 @@ const AssetSourceList = () => {
 			<AssetSourceUploadModal
 				isOpen={isUploadModalOpen}
 				onClose={() => setIsUploadModalOpen(false)}
+				accountId={activeAccountId}
 			/>
 		</div>
 	);
