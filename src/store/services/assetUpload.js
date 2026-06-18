@@ -2,14 +2,63 @@ import api from "./api";
 
 const assetUpload = api.injectEndpoints({
 	endpoints: (builder) => ({
-		// 1. GET ALL UPLOADS — requires accountId from active session
 		getAssetUploads: builder.query({
 			query: (accountId) => `/list/${accountId}`,
 			transformResponse: (response) => response.data ?? [],
 			providesTags: ["AssetUploads"],
 		}),
 
-		// 2. RETRY / REPLACE FILE — PUT /retry/:id
+		getAssetSource: builder.query({
+			query: (id) => `/source/${id}`,
+			transformResponse: (response) => response.data,
+			providesTags: (_result, _error, id) => [
+				{ type: "AssetUploads", id },
+			],
+		}),
+
+		getAssetSourceRows: builder.query({
+			query: ({ id, page = 1, limit = 50 }) =>
+				`/source/${id}/rows?page=${page}&limit=${limit}`,
+			transformResponse: (response) => response.data,
+			providesTags: (_result, _error, { id }) => [
+				{ type: "AssetSourceRows", id },
+			],
+		}),
+
+		updateAssetSourceRows: builder.mutation({
+			query: ({ id, rows }) => ({
+				url: `/source/${id}/rows`,
+				method: "PUT",
+				body: { rows },
+			}),
+			invalidatesTags: (_r, _e, { id }) => [
+				"AssetUploads",
+				{ type: "AssetUploads", id },
+				{ type: "AssetSourceRows", id },
+			],
+		}),
+
+		finishAssetSource: builder.mutation({
+			query: ({ id, ...body }) => ({
+				url: `/source/${id}/finish`,
+				method: "POST",
+				body,
+			}),
+			invalidatesTags: (_r, _e, { id }) => [
+				"AssetUploads",
+				{ type: "AssetUploads", id },
+				{ type: "AssetSourceRows", id },
+			],
+		}),
+
+		deleteAssetSource: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}`,
+				method: "DELETE",
+			}),
+			invalidatesTags: ["AssetUploads"],
+		}),
+
 		retryUpload: builder.mutation({
 			query: ({ id, formData }) => ({
 				url: `/retry/${id}`,
@@ -19,7 +68,6 @@ const assetUpload = api.injectEndpoints({
 			invalidatesTags: ["AssetUploads"],
 		}),
 
-		// 3. CREATE NEW UPLOAD — POST /upload
 		uploadAssetSource: builder.mutation({
 			query: (formData) => ({
 				url: "/upload",
@@ -34,6 +82,11 @@ const assetUpload = api.injectEndpoints({
 
 export const {
 	useGetAssetUploadsQuery,
+	useGetAssetSourceQuery,
+	useGetAssetSourceRowsQuery,
+	useUpdateAssetSourceRowsMutation,
+	useFinishAssetSourceMutation,
+	useDeleteAssetSourceMutation,
 	useRetryUploadMutation,
 	useUploadAssetSourceMutation,
 } = assetUpload;

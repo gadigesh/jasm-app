@@ -35,8 +35,8 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 	});
 
 	const handleSubmit = async () => {
-		if (!assetName.trim()) {
-			showError("Please enter an asset name");
+		if (!assetName?.trim()) {
+			showError("Please enter an asset source name");
 			return;
 		}
 		if (!uniqueColumn.trim()) {
@@ -98,11 +98,12 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 		>
 			<p className="text-gray-500 mb-4">Add your Asset source here.</p>
 
-			{/* Asset Name + Unique Column */}
+			{/* Asset Source Name + Unique Column */}
 			<div className="grid grid-cols-2 gap-4 mb-4">
 				<div>
 					<label className="block text-sm font-bold text-gray-900 mb-1">
-						Asset Name <span className="text-red-500">*</span>
+						Asset Source Name{" "}
+						<span className="text-red-500">*</span>
 					</label>
 					<input
 						type="text"

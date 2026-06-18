@@ -28,7 +28,7 @@ const Dashboard = () => {
 
 	const handleCardClick = async (accountId) => {
 		await switchAccount(accountId);
-		navigate("/asset-sources");
+		navigate("/copy-matrix");
 	};
 
 	const displayedCampaigns = useMemo(() => {

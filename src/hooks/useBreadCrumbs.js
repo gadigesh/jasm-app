@@ -18,19 +18,50 @@ const useBreadcrumbs = () => {
 	if (data?.activeAccount?.accountName) {
 		breadcrumbs.push({
 			label: data.activeAccount.accountName,
-			to: `/asset-sources`,
+			to: `/copy-matrix`,
 		});
 	}
 
-	// 3️ Asset Source List
+	// 3️ Copy Matrix
+	if (location.pathname.startsWith("/copy-matrix")) {
+		breadcrumbs.push({
+			label: NAVIGATION_META.copy_matrix.label,
+			to: NAVIGATION_META.copy_matrix.path,
+		});
+
+		const workflowMatch = location.pathname.match(
+			/^\/copy-matrix\/([^/]+)\/(workflow|preview)$/
+		);
+		if (workflowMatch) {
+			breadcrumbs.push({
+				label:
+					workflowMatch[2] === "preview"
+						? "Preview"
+						: "Workflow",
+				to: location.pathname,
+			});
+		}
+	}
+
+	// 4️ Asset Source List
 	if (location.pathname.startsWith("/asset-sources")) {
 		breadcrumbs.push({
 			label: NAVIGATION_META.asset_source.label,
 			to: NAVIGATION_META.asset_source.path,
 		});
+
+		const asPreviewMatch = location.pathname.match(
+			/^\/asset-sources\/([^/]+)\/preview$/
+		);
+		if (asPreviewMatch) {
+			breadcrumbs.push({
+				label: "Preview",
+				to: location.pathname,
+			});
+		}
 	}
 
 	return breadcrumbs;
-};;
+};
 
 export default useBreadcrumbs;

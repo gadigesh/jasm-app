@@ -1,4 +1,4 @@
-import { Plus, ArrowLeft } from "lucide-react";
+import { Plus, ArrowLeft, Upload, Download } from "lucide-react";
 import SortDropdown from "../common/SortDropdown";
 import FilterDropdown from "../common/FilterDropdown";
 export const SortAction = (props) => <SortDropdown {...props} />;
@@ -13,10 +13,11 @@ export const AddButton = ({ label, onClick, disabled }) => (
 		{label}
 	</button>
 );
-export const SaveButton = ({ label = "Save", onClick }) => (
+export const SaveButton = ({ label = "Save", onClick, disabled }) => (
 	<button
 		onClick={onClick}
-		className="px-5 py-2 bg-[#7C3AED] text-white rounded-lg text-sm font-semibold"
+		disabled={disabled}
+		className="px-5 py-2 bg-[#7C3AED] text-white rounded-lg text-sm font-semibold disabled:opacity-50"
 	>
 		{label}
 	</button>
@@ -36,5 +37,23 @@ export const BackButton = ({ label, onClick }) => (
 	>
 		<ArrowLeft className="h-4 w-4" />
 		{label}
+	</button>
+);
+export const ImportButton = ({ onClick }) => (
+	<button
+		onClick={onClick}
+		className="flex items-center gap-2 px-4 py-2 border border-[#EEF2F6] text-[#64748B] rounded-lg hover:border-[#B600C9] hover:text-[#B600C9] text-sm font-medium"
+	>
+		<Upload className="h-4 w-4" />
+		Import
+	</button>
+);
+export const ExportButton = ({ onClick }) => (
+	<button
+		onClick={onClick}
+		className="flex items-center gap-2 px-4 py-2 border border-[#EEF2F6] text-[#64748B] rounded-lg hover:border-[#B600C9] hover:text-[#B600C9] text-sm font-medium"
+	>
+		<Download className="h-4 w-4" />
+		Export
 	</button>
 );
