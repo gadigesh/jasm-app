@@ -14,11 +14,13 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 	const navigate = useNavigate();
 	// Active states derived from URL
 	const isDashboard = pathname === "/" || pathname === "/dashboard";
-	const isAssetSource = pathname.startsWith("/asset-sources");
+	const isAssetSource =
+		pathname.startsWith("/asset-sources") ||
+		pathname.startsWith("/copy-matrix");
 	const isSettings = pathname.startsWith("/settings");
 	const handleNavigate = (view) => {
 		if (view === "DASHBOARD") navigate("/dashboard");
-		if (view === "SOURCE_LIST") navigate("/asset-sources");
+		if (view === "SOURCE_LIST") navigate("/copy-matrix");
 		if (view === "SETTINGS") navigate("/settings");
 	}; 
 

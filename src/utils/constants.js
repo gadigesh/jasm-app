@@ -33,6 +33,13 @@ export const asListTableHeaders = [
 	}
 ];
 
+export const copyMatrixListHeaders = [
+	{ key: "name", label: "Name" },
+	{ key: "updatedAt", label: "Last updated" },
+	{ key: "createdBy", label: "Created by" },
+	{ key: "status", label: "Status" },
+];
+
 import {
 	FileSpreadsheet,
 	ShoppingBag,
@@ -63,6 +70,10 @@ export const NAVIGATION_META = {
 	dashboard: {
 		label: "Dashboard",
 		path: "/dashboard",
+	},
+	copy_matrix: {
+		label: "Copy Matrix",
+		path: "/copy-matrix",
 	},
 	asset_source: {
 		label: "Asset Sources",

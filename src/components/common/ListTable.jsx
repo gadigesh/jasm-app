@@ -1,7 +1,16 @@
 import { useState, useRef } from "react";
-import { Pencil, Copy, Download, Trash } from "lucide-react";
+import { Pencil, Eye, Download, Trash } from "lucide-react";
 
-const ListTable = ({ columns = [], rows = [], loading = false }) => {
+const ListTable = ({
+	columns = [],
+	rows = [],
+	loading = false,
+	onRowClick,
+	onView,
+	onEdit,
+	onDelete,
+	onDownload,
+}) => {
 	const [scrolled, setScrolled] = useState(false);
 	const scrollRef = useRef(null);
 
@@ -42,8 +51,11 @@ const ListTable = ({ columns = [], rows = [], loading = false }) => {
 							{!loading &&
 								rows.map((row, rowIndex) => (
 									<tr
-										key={rowIndex}
-										className="hover:bg-gray-200 cursor-pointer relative top-2 shadow-sm transition-colors"
+										key={row._id || rowIndex}
+										onClick={() => onRowClick?.(row)}
+										className={`hover:bg-gray-200 relative top-2 shadow-sm transition-colors ${
+											onRowClick ? "cursor-pointer" : ""
+										}`}
 									>
 										{columns.map((col) => (
 											<td
@@ -58,24 +70,41 @@ const ListTable = ({ columns = [], rows = [], loading = false }) => {
 													: row[col.key]}
 											</td>
 										))}
-										<td className="px-4 py-3 text-center">
-											{/* Icons without Tooltips */}
+										<td
+											className="px-4 py-3 text-center"
+											onClick={(e) => e.stopPropagation()}
+										>
 											<div className="flex justify-center gap-3 text-gray-400">
 												<Pencil
 													size={16}
 													className="cursor-pointer hover:text-indigo-600 transition-colors"
+													onClick={() => onEdit?.(row)}
 												/>
-												<Copy
+												<Eye
 													size={16}
 													className="cursor-pointer hover:text-indigo-600 transition-colors"
+													onClick={() =>
+														onView
+															? onView(row)
+															: onRowClick?.(row)
+													}
 												/>
 												<Download
 													size={16}
-													className="cursor-pointer hover:text-indigo-600 transition-colors"
+													title="Download CSV"
+													className={`transition-colors ${
+														onDownload
+															? "cursor-pointer hover:text-indigo-600"
+															: "opacity-30 cursor-not-allowed"
+													}`}
+													onClick={() =>
+														onDownload?.(row)
+													}
 												/>
 												<Trash
 													size={16}
 													className="cursor-pointer hover:text-red-500 transition-colors"
+													onClick={() => onDelete?.(row)}
 												/>
 											</div>
 										</td>

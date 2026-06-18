@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
-import PageHeader from "../../components/navigation/PageHeader";
+import { useNavigate } from "react-router-dom";
+import AssetAccountHeader from "../../components/navigation/AssetAccountHeader";
 import {
 	SortAction,
 	FilterAction,
@@ -13,29 +14,50 @@ import { asListTableHeaders } from "../../utils/constants";
 import {
 	useGetAssetUploadsQuery,
 	useRetryUploadMutation,
+	useDeleteAssetSourceMutation,
 } from "../../store/services/assetUpload";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
 import AssetSourceUploadModal from "../../components/modals/AddASUploadModal";
+import ConfirmDialog from "../../components/modals/ConfirmDialog";
+import { showSuccess, showError } from "../../utils/toastMsg";
+import { downloadFromApi } from "../../utils/downloadCsv";
 
 const AssetSourceList = () => {
+	const navigate = useNavigate();
 	const breadcrumbs = useBreadcrumbs();
 
 	// Local State
 	const [sortBy, setSortBy] = useState("recent");
 	const [filterStatus, setFilterStatus] = useState("all");
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-	const uploaderName = useGetMeQuery();
+	const [deleteTarget, setDeleteTarget] = useState(null);
+	const { data: meData } = useGetMeQuery();
+	const activeAccountId = meData?.activeAccount?._id;
 
-	// 1. FETCH DATA (With Polling)
-	// pollingInterval: 5000 -> Checks for status updates every 5 seconds
+	// 1. FETCH DATA (skip until we have an accountId)
 	const {
 		data: uploads = [],
 		isLoading,
 		isFetching,
-	} = useGetAssetUploadsQuery();
+	} = useGetAssetUploadsQuery(activeAccountId, {
+		skip: !activeAccountId,
+	});
 
 	// 2. MUTATION (Retry Upload)
 	const [retryUpload, { isLoading: isRetrying }] = useRetryUploadMutation();
+	const [deleteAssetSource, { isLoading: isDeleting }] =
+		useDeleteAssetSourceMutation();
+
+	const confirmDelete = async () => {
+		if (!deleteTarget) return;
+		try {
+			await deleteAssetSource(deleteTarget._id).unwrap();
+			showSuccess("Asset source deleted");
+			setDeleteTarget(null);
+		} catch (error) {
+			showError(error?.data?.message || "Failed to delete");
+		}
+	};
 
 	// 3. HANDLE FILE REPLACEMENT
 	const handleReplaceFile = async (e, uploadId) => {
@@ -66,11 +88,11 @@ const AssetSourceList = () => {
 
 		// Map Backend Data to UI Structure
 		let result = uploads.map((item) => ({
-			_id: item._id, // Keep ID for actions
-			name: item.fileName.split(".")[0],
-			updatedAt: item.updatedAt, // Pass raw date for sorting
+			_id: item._id,
+			name: item.name || item.fileName?.replace(/\.[^.]+$/, "") || "Untitled",
+			updatedAt: item.updatedAt,
 			displayDate: new Date(item.updatedAt).toLocaleString(), // Formatted for UI
-			updatedBy: item?.uploadedBy?.firstName || "System",
+			updatedBy: item.updatedBy || item.uploadedBy || "Unknown",
 			status: item.status, // pending, processing, completed, failed, partial_success
 			errorLog: item.errorLog,
 			validationErrors: item.validationErrors,
@@ -218,8 +240,7 @@ const AssetSourceList = () => {
 
 	return (
 		<div className="bg-white">
-			<PageHeader
-				title="Asset Sources"
+			<AssetAccountHeader
 				breadcrumbs={breadcrumbs}
 				actions={[
 					<SortAction
@@ -244,8 +265,29 @@ const AssetSourceList = () => {
 				<ListTable
 					columns={columns}
 					rows={filteredAndSortedData}
-					// Show loading on initial fetch, but not during background polling
 					loading={isLoading && !isFetching && uploads.length === 0}
+					onEdit={(row) =>
+						navigate(`/asset-sources/${row._id}/preview`)
+					}
+					onView={(row) =>
+						navigate(
+							`/asset-sources/${row._id}/preview?mode=view`
+						)
+					}
+					onDownload={async (row) => {
+						try {
+							await downloadFromApi(
+								`/source/${row._id}/export`,
+								row.name
+							);
+							showSuccess("Download started");
+						} catch (error) {
+							showError(
+								error?.message || "Failed to download"
+							);
+						}
+					}}
+					onDelete={(row) => setDeleteTarget(row)}
 				/>
 				<div className="px-6">
 					<div className="flex items-center justify-between">
@@ -261,6 +303,17 @@ const AssetSourceList = () => {
 			<AssetSourceUploadModal
 				isOpen={isUploadModalOpen}
 				onClose={() => setIsUploadModalOpen(false)}
+				accountId={activeAccountId}
+			/>
+
+			<ConfirmDialog
+				isOpen={!!deleteTarget}
+				onClose={() => setDeleteTarget(null)}
+				onConfirm={confirmDelete}
+				isLoading={isDeleting}
+				title="Delete asset source?"
+				message={`Are you sure you want to delete "${deleteTarget?.name}"? This will permanently remove the asset source and all its data.`}
+				confirmLabel="Delete"
 			/>
 		</div>
 	);

@@ -8,6 +8,10 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import AssetSourceList from "./pages/assetSources/AssetSourceList";
+import AssetSourcePreviewRoute from "./pages/assetSources/AssetSourcePreviewRoute";
+import CopyMatrixList from "./pages/copyMatrix/CopyMatrixList";
+import CopyMatrixPreview from "./pages/copyMatrix/CopyMatrixPreview";
+import CopyMatrixWorkflow from "./pages/copyMatrix/CopyMatrixWorkflow";
 
 function AppContent() {
 	return (
@@ -21,6 +25,22 @@ function AppContent() {
 					<Route path="/" element={<MainLayout />}>
 						<Route index element={<Dashboard />} />
 						<Route path="dashboard" element={<Dashboard />} />
+						<Route
+							path="copy-matrix"
+							element={<CopyMatrixList />}
+						/>
+						<Route
+							path="copy-matrix/:id/preview"
+							element={<CopyMatrixPreview />}
+						/>
+						<Route
+							path="copy-matrix/:id/workflow"
+							element={<CopyMatrixWorkflow />}
+						/>
+						<Route
+							path="asset-sources/:id/preview"
+							element={<AssetSourcePreviewRoute />}
+						/>
 						<Route
 							path="asset-sources"
 							element={<AssetSourceList />}
