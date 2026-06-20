@@ -8,7 +8,7 @@ const RowsPerPage = ({ value, onChange, className }) => {
 				<select
 					value={value}
 					onChange={(e) => onChange(Number(e.target.value))}
-					className="appearance-none border border-gray-300 rounded px-3 py-1.5 pr-8 bg-white focus:outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer"
+					className="appearance-none border border-gray-300 rounded px-3 py-1.5 pr-8 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 focus:border-[#B600C9] cursor-pointer"
 				>
 					<option value={10}>10</option>
 					<option value={20}>20</option>

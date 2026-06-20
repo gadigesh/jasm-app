@@ -1,5 +1,3 @@
-//export const BASE_URL = "https://jasm-app-sever.onrender.com";
-
 export const timeAgo = (date) => {
 	const diff = Date.now() - new Date(date).getTime();
 	const sec = Math.floor(diff / 1000);
@@ -12,6 +10,8 @@ export const timeAgo = (date) => {
 	if (hr < 24) return `${hr} hr ago`;
 	return `${day} day${day > 1 ? "s" : ""} ago`;
 };
+
+export const AUTO_ROW_ID_COLUMN = "Row ID";
 
 // src/utils/constants.jsx
 export const asListTableHeaders = [

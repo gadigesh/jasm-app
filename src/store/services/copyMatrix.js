@@ -33,6 +33,15 @@ const copyMatrixApi = api.injectEndpoints({
 			}),
 		}),
 
+		getGsheetTabs: builder.mutation({
+			query: (fileRef) => ({
+				url: "/copy-matrix/gsheet/sheets",
+				method: "POST",
+				body: { fileRef },
+			}),
+			transformResponse: (response) => response.data,
+		}),
+
 		finishCopyMatrix: builder.mutation({
 			query: ({ id, ...body }) => ({
 				url: `/copy-matrix/${id}/finish`,
@@ -155,6 +164,7 @@ export const {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
 	usePreviewCopyMatrixMutation,
+	useGetGsheetTabsMutation,
 	useFinishCopyMatrixMutation,
 	useDeleteCopyMatrixMutation,
 	useUpdateCopyMatrixRowsMutation,

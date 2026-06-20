@@ -9,14 +9,16 @@ import {
 } from "../../components/navigation/HeaderActions";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import EditableSheetTable from "../../components/common/EditableSheetTable";
+import OperationProgressOverlay from "../../components/common/OperationProgressOverlay";
 import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 import {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
-	useSaveAndContinueCopyMatrixMutation,
 } from "../../store/services/copyMatrix";
 import api from "../../store/services/api";
 import { showSuccess, showError } from "../../utils/toastMsg";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { runJsonStepsWithProgress } from "../../utils/uploadWithProgress";
 
 const normalizeId = (value) => {
 	if (!value) return null;
@@ -37,6 +39,9 @@ const CopyMatrixWorkflow = () => {
 	const [page, setPage] = useState(1);
 	const [rowsPerPage, setRowsPerPage] = useState(10);
 	const [pendingEdits, setPendingEdits] = useState({});
+	const [isSavingOp, setIsSavingOp] = useState(false);
+	const [saveProgress, setSaveProgress] = useState(0);
+	const [savePhase, setSavePhase] = useState("saving");
 	const tableRef = useRef(null);
 
 	const { data: matrix, isLoading: isMatrixLoading } =
@@ -48,9 +53,6 @@ const CopyMatrixWorkflow = () => {
 			{ id, page, limit: rowsPerPage },
 			{ skip: !id }
 		);
-
-	const [saveAndContinue, { isLoading: isSaving }] =
-		useSaveAndContinueCopyMatrixMutation();
 
 	const columns = useMemo(
 		() => rowsData?.columns || matrix?.columns || [],
@@ -116,13 +118,29 @@ const CopyMatrixWorkflow = () => {
 	};
 
 	const handleSave = async () => {
+		if (isSavingOp) return;
+
 		const edits = collectEdits();
 
+		setIsSavingOp(true);
+		setSaveProgress(0);
+		setSavePhase("saving");
+
 		try {
-			const result = await saveAndContinue({
-				id,
-				rows: edits,
-			}).unwrap();
+			const result = await runJsonStepsWithProgress(
+				[
+					{
+						path: `/copy-matrix/${id}/save-and-continue`,
+						method: "POST",
+						body: { rows: edits },
+						phase: "saving",
+					},
+				],
+				({ percent, phase }) => {
+					setSaveProgress(percent);
+					setSavePhase(phase);
+				}
+			);
 
 			setPendingEdits({});
 
@@ -135,6 +153,11 @@ const CopyMatrixWorkflow = () => {
 
 			dispatch(
 				api.util.invalidateTags([
+					"CopyMatrices",
+					{ type: "CopyMatrices", id },
+					"CopyMatrixRows",
+					{ type: "CopyMatrixRows", id },
+					"AssetUploads",
 					{ type: "AssetUploads", id: assetUploadId },
 					{ type: "AssetSourceRows", id: assetUploadId },
 				])
@@ -150,14 +173,23 @@ const CopyMatrixWorkflow = () => {
 				},
 			});
 		} catch (error) {
-			showError(
-				error?.data?.message || "Failed to save changes"
-			);
+			showError(getApiErrorMessage(error, "Could not save changes."));
+		} finally {
+			setIsSavingOp(false);
+			setSaveProgress(0);
+			setSavePhase("saving");
 		}
 	};
 
 	return (
 		<div className="bg-white min-h-full">
+			<OperationProgressOverlay
+				visible={isSavingOp}
+				percent={saveProgress}
+				phase={savePhase}
+				mode="save"
+				title="Saving copy matrix"
+			/>
 			<AssetAccountHeader
 				breadcrumbs={breadcrumbs}
 				actions={[
@@ -170,9 +202,9 @@ const CopyMatrixWorkflow = () => {
 					!readOnly && (
 						<SaveButton
 							key="save"
-							label={isSaving ? "Saving..." : "Save & continue"}
+							label={isSavingOp ? "Saving..." : "Save & continue"}
 							onClick={handleSave}
-							disabled={isSaving}
+							disabled={isSavingOp}
 						/>
 					),
 				].filter(Boolean)}

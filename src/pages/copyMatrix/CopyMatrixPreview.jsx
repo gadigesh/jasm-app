@@ -9,15 +9,21 @@ import {
 } from "../../components/navigation/HeaderActions";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import EditableSheetTable from "../../components/common/EditableSheetTable";
+import OperationProgressOverlay from "../../components/common/OperationProgressOverlay";
 import {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
-	useFinishCopyMatrixMutation,
 	useDeleteCopyMatrixMutation,
-	useUpdateCopyMatrixRowsMutation,
 } from "../../store/services/copyMatrix";
 import api from "../../store/services/api";
-import { showSuccess, showError } from "../../utils/toastMsg";
+import { showSuccess, showError, showWarning } from "../../utils/toastMsg";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { runJsonStepsWithProgress } from "../../utils/uploadWithProgress";
+import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
+import {
+	formInputClass,
+	formSelectClass,
+} from "../../utils/formStyles";
 
 const CopyMatrixPreview = () => {
 	const { id } = useParams();
@@ -28,6 +34,9 @@ const CopyMatrixPreview = () => {
 	const [name, setName] = useState("");
 	const [uniqueColumn, setUniqueColumn] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
+	const [isSavingOp, setIsSavingOp] = useState(false);
+	const [saveProgress, setSaveProgress] = useState(0);
+	const [savePhase, setSavePhase] = useState("saving");
 	const tableRef = useRef(null);
 
 	const collectEdits = () => {
@@ -47,15 +56,25 @@ const CopyMatrixPreview = () => {
 		});
 	};
 
-	const savePendingEdits = async () => {
-		const edits = collectEdits();
-		if (edits.length === 0) return { saved: false };
-		const result = await updateRows({ id, rows: edits }).unwrap();
-		setPendingEdits({});
-		return {
-			saved: true,
-			assetUploadId: result?.data?.assetUploadId || null,
-		};
+	const invalidateAfterSave = (assetUploadId) => {
+		dispatch(
+			api.util.invalidateTags([
+				"CopyMatrices",
+				{ type: "CopyMatrices", id },
+				"CopyMatrixRows",
+				{ type: "CopyMatrixRows", id },
+				"AssetUploads",
+			])
+		);
+
+		if (assetUploadId) {
+			dispatch(
+				api.util.invalidateTags([
+					{ type: "AssetUploads", id: assetUploadId },
+					{ type: "AssetSourceRows", id: assetUploadId },
+				])
+			);
+		}
 	};
 
 	const { data: matrix, isLoading: isMatrixLoading } =
@@ -66,10 +85,6 @@ const CopyMatrixPreview = () => {
 			{ skip: !id }
 		);
 
-	const [updateRows, { isLoading: isSaving }] =
-		useUpdateCopyMatrixRowsMutation();
-	const [finishCopyMatrix, { isLoading: isFinishing }] =
-		useFinishCopyMatrixMutation();
 	const [deleteCopyMatrix] = useDeleteCopyMatrixMutation();
 
 	const columns = useMemo(
@@ -99,8 +114,14 @@ const CopyMatrixPreview = () => {
 
 	useEffect(() => {
 		if (matrix?.name && !name) setName(matrix.name);
-		if (columns.length && !uniqueColumn) setUniqueColumn(columns[0]);
-	}, [matrix?.name, name, columns, uniqueColumn]);
+		if (columns.length && !uniqueColumn) {
+			setUniqueColumn(
+				columns.includes(AUTO_ROW_ID_COLUMN)
+					? AUTO_ROW_ID_COLUMN
+					: matrix?.defaultUniqueColumn || AUTO_ROW_ID_COLUMN
+			);
+		}
+	}, [matrix?.name, matrix?.defaultUniqueColumn, name, columns, uniqueColumn]);
 
 	const handleCellChange = useCallback((rowId, rowData) => {
 		setPendingEdits((prev) => ({
@@ -128,6 +149,7 @@ const CopyMatrixPreview = () => {
 	};
 
 	const handleBack = async () => {
+		if (isSavingOp) return;
 		if (matrix?.status === "draft") {
 			try {
 				await deleteCopyMatrix(id).unwrap();
@@ -156,29 +178,106 @@ const CopyMatrixPreview = () => {
 	};
 
 	const handleContinue = async () => {
+		if (isSavingOp) return;
+
+		setIsSavingOp(true);
+		setSaveProgress(0);
+		setSavePhase("saving");
+
 		try {
 			if (isDraft) {
-				await savePendingEdits();
-				const result = await finishCopyMatrix({
-					id,
-					name: displayName.trim() || matrix?.name,
-					uniqueColumn: uniqueColumn || columns[0],
-				}).unwrap();
-				showSuccess(result?.message || "Copy matrix saved");
+				const steps = [];
+				const edits = collectEdits();
+
+				if (edits.length > 0) {
+					steps.push({
+						path: `/copy-matrix/${id}/rows`,
+						method: "PUT",
+						body: { rows: edits },
+						phase: "saving",
+					});
+				}
+
+				steps.push({
+					path: `/copy-matrix/${id}/finish`,
+					method: "POST",
+					body: {
+						name: displayName.trim() || matrix?.name,
+						uniqueColumn: uniqueColumn || AUTO_ROW_ID_COLUMN,
+					},
+					phase: "processing",
+				});
+
+				const result = await runJsonStepsWithProgress(steps, ({
+					percent,
+					phase,
+				}) => {
+					setSaveProgress(percent);
+					setSavePhase(phase);
+				});
+
+				setPendingEdits({});
+				invalidateAfterSave(result?.data?.assetUploadId);
+
+				if (result?.data?.uniqueColumnNotice) {
+					showWarning(result.data.uniqueColumnNotice);
+				} else {
+					showSuccess(result?.message || "Copy matrix saved");
+				}
+
 				goToAssetSourceEdit(result?.data?.assetUploadId);
 				return;
 			}
 
-			const { saved, assetUploadId: syncedId } = await savePendingEdits();
-			if (saved) showSuccess("Changes saved");
-			goToAssetSourceEdit(syncedId || matrix?.assetUploadId);
+			const edits = collectEdits();
+			if (edits.length === 0) {
+				goToAssetSourceEdit(matrix?.assetUploadId);
+				return;
+			}
+
+			const result = await runJsonStepsWithProgress(
+				[
+					{
+						path: `/copy-matrix/${id}/rows`,
+						method: "PUT",
+						body: { rows: edits },
+						phase: "saving",
+					},
+				],
+				({ percent, phase }) => {
+					setSaveProgress(percent);
+					setSavePhase(phase);
+				}
+			);
+
+			setPendingEdits({});
+			invalidateAfterSave(
+				result?.data?.assetUploadId || matrix?.assetUploadId
+			);
+			showSuccess("Changes saved");
+			goToAssetSourceEdit(
+				result?.data?.assetUploadId || matrix?.assetUploadId
+			);
 		} catch (error) {
-			showError(error?.data?.message || "Failed to save copy matrix");
+			showError(
+				getApiErrorMessage(error, "Could not save the copy matrix.")
+			);
+		} finally {
+			setIsSavingOp(false);
+			setSaveProgress(0);
+			setSavePhase("saving");
 		}
 	};
 
 	return (
 		<div className="bg-white min-h-full">
+			<OperationProgressOverlay
+				visible={isSavingOp}
+				percent={saveProgress}
+				phase={savePhase}
+				mode="save"
+				title="Saving copy matrix"
+			/>
 			<div className="bg-white px-8 py-4 border-b sticky top-0 z-50">
 				<div className="flex justify-between items-center">
 					<div>
@@ -199,7 +298,7 @@ const CopyMatrixPreview = () => {
 						<CancelButton onClick={handleBack} />
 						<SaveButton
 							label={
-								isFinishing || isSaving
+								isSavingOp
 									? "Saving..."
 									: isDraft
 									? "Finish"
@@ -209,8 +308,7 @@ const CopyMatrixPreview = () => {
 							}
 							onClick={handleContinue}
 							disabled={
-								isFinishing ||
-								isSaving ||
+								isSavingOp ||
 								(!isDraft && !canContinue)
 							}
 						/>
@@ -229,7 +327,7 @@ const CopyMatrixPreview = () => {
 							value={displayName}
 							onChange={(e) => setName(e.target.value)}
 							placeholder="e.g. AMR_PRSP"
-							className="w-full max-w-md px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 focus:border-[#B600C9]"
+							className={`${formInputClass} max-w-md`}
 						/>
 					</div>
 					{columns.length > 0 && (
@@ -240,14 +338,21 @@ const CopyMatrixPreview = () => {
 							<select
 								value={uniqueColumn}
 								onChange={(e) => setUniqueColumn(e.target.value)}
-								className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+								className={formSelectClass}
 							>
 								{columns.map((col) => (
 									<option key={col} value={col}>
-										{col}
+										{col === AUTO_ROW_ID_COLUMN
+											? `${col} (default — always unique)`
+											: col}
 									</option>
 								))}
 							</select>
+							<p className="text-xs text-gray-500 mt-1">
+								Default is {AUTO_ROW_ID_COLUMN}. If your
+								selection is not unique,{" "}
+								{AUTO_ROW_ID_COLUMN} will be used automatically.
+							</p>
 						</div>
 					)}
 					<div className="text-sm text-gray-500">
@@ -276,6 +381,7 @@ const CopyMatrixPreview = () => {
 						setPage(1);
 					}}
 					onCellChange={handleCellChange}
+					readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
 				/>
 			</div>
 		</div>

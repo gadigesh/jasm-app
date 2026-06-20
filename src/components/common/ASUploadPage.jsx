@@ -6,6 +6,7 @@ const ASUploadPage = ({
 	title,
 	children,
 	maxWidth = "max-w-md",
+	disableClose = false,
 }) => {
 	const [show, setShow] = useState(false);
 	const [animate, setAnimate] = useState(false);
@@ -32,7 +33,7 @@ const ASUploadPage = ({
 			{/* Backdrop */}
 			<div
 				className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-				onClick={onClose}
+				onClick={disableClose ? undefined : onClose}
 			/>
 
 			{/* Modal Content */}
@@ -46,7 +47,8 @@ const ASUploadPage = ({
 				{/* Close Button */}
 				<button
 					onClick={onClose}
-					className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full transition-colors hover:bg-gray-100"
+					disabled={disableClose}
+					className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
 				>
 					<X size={20} />
 				</button>

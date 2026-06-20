@@ -17,6 +17,7 @@ import {
 	useFinishAssetSourceMutation,
 } from "../../store/services/assetUpload";
 import { showSuccess, showError } from "../../utils/toastMsg";
+import { formInputClass } from "../../utils/formStyles";
 
 const AssetSourcePreview = ({ readOnly = false }) => {
 	const { id } = useParams();
@@ -250,7 +251,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 								value={displayName}
 								onChange={(e) => setName(e.target.value)}
 								placeholder="e.g. Summer Campaign"
-								className="w-full max-w-md px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 focus:border-[#B600C9]"
+								className={`${formInputClass} max-w-md`}
 							/>
 						) : (
 							<div className="w-full max-w-md px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm font-medium text-gray-800">
