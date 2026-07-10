@@ -21,6 +21,7 @@ import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import ValidatedNameInput from "../../components/common/ValidatedNameInput";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
 import { getDeletedAssetSourceNames } from "../../utils/copyMatrixHelpers";
+import { normalizeCellText } from "../../utils/normalizeCellText";
 
 const AssetSourcePreview = ({ readOnly = false }) => {
 	const { id } = useParams();
@@ -63,8 +64,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const serverRows = rowsData?.rows || [];
 		return serverRows.map((row) => {
 			const edit = pendingEdits[row._id];
-			if (!edit) return row;
-			return { ...row, ...edit };
+			const merged = edit ? { ...row, ...edit } : { ...row };
+			const normalized = { ...merged };
+			for (const col of Object.keys(merged)) {
+				if (
+					col === "_id" ||
+					col === "rowIndex" ||
+					col === "primaryKey"
+				) {
+					continue;
+				}
+				if (typeof merged[col] === "string" || merged[col] == null) {
+					normalized[col] = normalizeCellText(merged[col]);
+				}
+			}
+			return normalized;
 		});
 	}, [rowsData, pendingEdits]);
 

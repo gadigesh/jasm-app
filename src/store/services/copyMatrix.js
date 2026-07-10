@@ -176,6 +176,189 @@ const copyMatrixApi = api.injectEndpoints({
 			},
 		}),
 
+		addCopyMatrixRow: builder.mutation({
+			query: ({ id, rowData }) => ({
+				url: `/copy-matrix/${id}/rows/add`,
+				method: "POST",
+				body: { rowData },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		addCopyMatrixColumn: builder.mutation({
+			query: ({ id, columnName }) => ({
+				url: `/copy-matrix/${id}/columns/add`,
+				method: "POST",
+				body: { columnName },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		cloneCopyMatrixRow: builder.mutation({
+			query: ({ id, sourceRowId }) => ({
+				url: `/copy-matrix/${id}/rows/clone`,
+				method: "POST",
+				body: { sourceRowId },
+			}),
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		cloneCopyMatrixColumn: builder.mutation({
+			query: ({ id, sourceColumn, newColumnName }) => ({
+				url: `/copy-matrix/${id}/columns/clone`,
+				method: "POST",
+				body: { sourceColumn, newColumnName },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		fillCopyMatrixColumnSequence: builder.mutation({
+			query: ({ id, column, rowIds }) => ({
+				url: `/copy-matrix/${id}/columns/fill-sequence`,
+				method: "POST",
+				body: { column, rowIds },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+			],
+		}),
+
+		copyCopyMatrixColumnFrom: builder.mutation({
+			query: ({ id, targetColumn, sourceColumn, rowIds }) => ({
+				url: `/copy-matrix/${id}/columns/copy-from`,
+				method: "POST",
+				body: { targetColumn, sourceColumn, rowIds },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+			],
+		}),
+
+		fillCopyMatrixColumnDate: builder.mutation({
+			query: ({ id, column, dateValue, rowIds }) => ({
+				url: `/copy-matrix/${id}/columns/fill-date`,
+				method: "POST",
+				body: { column, dateValue, rowIds },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+			],
+		}),
+
+		replaceCopyMatrixColumn: builder.mutation({
+			query: ({ id, column, find, replace, mode, rowIds }) => ({
+				url: `/copy-matrix/${id}/columns/replace`,
+				method: "POST",
+				body: { column, find, replace, mode, rowIds },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, arg) =>
+				arg?.mode === "find"
+					? []
+					: [{ type: "CopyMatrixRows", id: arg.id }],
+		}),
+
+		applyCopyMatrixColumnChanges: builder.mutation({
+			query: ({ id, column, changes }) => ({
+				url: `/copy-matrix/${id}/columns/apply-changes`,
+				method: "POST",
+				body: { column, changes },
+			}),
+			transformResponse: (response) => response.data,
+			async onQueryStarted(
+				{ id, column, changes, page, limit },
+				{ dispatch, queryFulfilled }
+			) {
+				if (!column || !Array.isArray(changes) || !changes.length) {
+					return;
+				}
+				const valueById = new Map(
+					changes.map((c) => [String(c.rowId), c.value ?? ""])
+				);
+				const patches = [];
+				if (page != null && limit != null) {
+					patches.push(
+						dispatch(
+							copyMatrixApi.util.updateQueryData(
+								"getCopyMatrixRows",
+								{ id, page, limit },
+								(draft) => {
+									if (!draft?.rows) return;
+									for (const row of draft.rows) {
+										const key = String(row._id);
+										if (valueById.has(key)) {
+											row[column] = valueById.get(key);
+										}
+									}
+								}
+							)
+						)
+					);
+				}
+				try {
+					await queryFulfilled;
+				} catch {
+					patches.forEach((p) => p.undo());
+				}
+			},
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+			],
+		}),
+
+		renameCopyMatrixColumn: builder.mutation({
+			query: ({ id, oldName, newName }) => ({
+				url: `/copy-matrix/${id}/columns/rename`,
+				method: "PUT",
+				body: { oldName, newName },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		deleteCopyMatrixColumn: builder.mutation({
+			query: ({ id, column }) => ({
+				url: `/copy-matrix/${id}/columns/delete`,
+				method: "POST",
+				body: { column },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+				{ type: "CopyMatrices", id },
+			],
+		}),
+
+		checkCopyMatrixUniqueColumn: builder.mutation({
+			query: ({ id, column }) => ({
+				url: `/copy-matrix/${id}/check-unique-column`,
+				method: "POST",
+				body: { column },
+			}),
+			transformResponse: (response) => response.data,
+		}),
+
 		saveAndContinueCopyMatrix: builder.mutation({
 			query: ({ id, rows = [] }) => ({
 				url: `/copy-matrix/${id}/save-and-continue`,
@@ -289,5 +472,17 @@ export const {
 	useCloneCopyMatrixMutation,
 	useUpdateCopyMatrixRowsMutation,
 	useUpdateCopyMatrixMutation,
+	useAddCopyMatrixRowMutation,
+	useAddCopyMatrixColumnMutation,
+	useCloneCopyMatrixRowMutation,
+	useCloneCopyMatrixColumnMutation,
+	useFillCopyMatrixColumnSequenceMutation,
+	useCopyCopyMatrixColumnFromMutation,
+	useFillCopyMatrixColumnDateMutation,
+	useReplaceCopyMatrixColumnMutation,
+	useApplyCopyMatrixColumnChangesMutation,
+	useRenameCopyMatrixColumnMutation,
+	useDeleteCopyMatrixColumnMutation,
+	useCheckCopyMatrixUniqueColumnMutation,
 	useSaveAndContinueCopyMatrixMutation,
 } = copyMatrixApi;
