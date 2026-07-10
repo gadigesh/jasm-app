@@ -1,5 +1,28 @@
 import { useState, useRef } from "react";
-import { Pencil, Eye, Download, Trash } from "lucide-react";
+import { Pencil, Eye, Download, Trash, Copy } from "lucide-react";
+import IconTooltip from "./IconTooltip";
+
+const alignClass = (align) => {
+	if (align === "left") return "text-left";
+	if (align === "right") return "text-right";
+	return "text-center";
+};
+
+const cellContent = (col, content) => {
+	if (col.align === "center") {
+		return <div className="flex justify-center">{content}</div>;
+	}
+	if (col.align === "right") {
+		return <div className="flex justify-end">{content}</div>;
+	}
+	return content;
+};
+
+const headerCellClass =
+	"px-4 py-3 bg-gray-50 border-y border-gray-200 text-xs font-medium text-gray-600 first:border-l first:rounded-l-lg last:border-r last:rounded-r-lg";
+
+const bodyCellClass =
+	"px-4 py-3 align-middle bg-white border-y border-gray-200 first:border-l first:rounded-l-lg last:border-r last:rounded-r-lg";
 
 const ListTable = ({
 	columns = [],
@@ -10,76 +33,119 @@ const ListTable = ({
 	onEdit,
 	onDelete,
 	onDownload,
+	onClone,
+	tooltips = {},
 }) => {
 	const [scrolled, setScrolled] = useState(false);
 	const scrollRef = useRef(null);
+
+	const labels = {
+		edit: "Edit",
+		view: "View",
+		download: "Download CSV",
+		delete: "Delete",
+		clone: "Clone",
+		...tooltips,
+	};
 
 	const handleScroll = (e) => {
 		setScrolled(e.target.scrollTop > 0);
 	};
 
+	const renderCellValue = (col, row) => {
+		if (col.render) {
+			return col.render(row[col.key], row);
+		}
+
+		if (col.key === "name") {
+			return (
+				<span className="font-medium text-[#334155]">{row[col.key]}</span>
+			);
+		}
+
+		return row[col.key];
+	};
+
 	return (
 		<div className="px-6">
-			<div className="bg-white overflow-hidden">
-				<div
-					ref={scrollRef}
-					onScroll={handleScroll}
-					className="max-h-[calc(100vh-290px)] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200"
-				>
-					<table className="w-full text-sm text-center text-[#64748B]">
-						<thead
-							className={`bg-gray-50 sticky top-0 z-20 text-xs font-medium border-b border-gray-200 transition-shadow duration-200 ${
-								scrolled ? "shadow-md" : ""
-							}`}
-						>
-							<tr>
-								{columns.map((col) => (
-									<th
-										key={col.key}
-										className="px-4 py-3 bg-gray-50"
-									>
-										{col.label}
-									</th>
-								))}
-								<th className="px-4 py-3 text-center bg-gray-50">
-									Options
+			<div
+				ref={scrollRef}
+				onScroll={handleScroll}
+				className="max-h-[calc(100vh-290px)] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200"
+			>
+				<table className="w-full border-separate border-spacing-y-2 text-sm text-[#64748B]">
+					<thead
+						className={`sticky top-0 z-20 transition-shadow duration-200 ${
+							scrolled ? "shadow-md" : ""
+						}`}
+					>
+						<tr>
+							{columns.map((col) => (
+								<th
+									key={col.key}
+									className={`${headerCellClass} ${alignClass(col.align)}`}
+								>
+									{col.headerRender
+										? col.headerRender()
+										: col.label}
 								</th>
-							</tr>
-						</thead>
+							))}
+							<th
+								className={`${headerCellClass} text-center`}
+							>
+								Options
+							</th>
+						</tr>
+					</thead>
 
-						<tbody className="divide-y divide-gray-100">
-							{!loading &&
-								rows.map((row, rowIndex) => (
-									<tr
-										key={row._id || rowIndex}
-										onClick={() => onRowClick?.(row)}
-										className={`hover:bg-gray-200 relative top-2 shadow-sm transition-colors ${
-											onRowClick ? "cursor-pointer" : ""
-										}`}
-									>
-										{columns.map((col) => (
-											<td
-												key={col.key}
-												className="px-4 py-3 truncate max-w-[240px]"
-											>
-												{col.render
-													? col.render(
-															row[col.key],
-															row
-													  )
-													: row[col.key]}
-											</td>
-										))}
+					<tbody>
+						{!loading &&
+							rows.map((row, rowIndex) => (
+								<tr
+									key={row._id || rowIndex}
+									onClick={() => onRowClick?.(row)}
+									className={`group transition-colors ${
+										onRowClick ? "cursor-pointer" : ""
+									}`}
+								>
+									{columns.map((col) => (
 										<td
-											className="px-4 py-3 text-center"
-											onClick={(e) => e.stopPropagation()}
+											key={col.key}
+											className={`${bodyCellClass} ${alignClass(col.align)} group-hover:bg-gray-50 ${
+												col.key === "name"
+													? "max-w-[320px]"
+													: "max-w-[240px]"
+											}`}
 										>
-											<div className="flex justify-center gap-3 text-gray-400">
+											{cellContent(
+												col,
+												<div
+													className={
+														col.key === "name"
+															? "truncate"
+															: ""
+													}
+												>
+													{renderCellValue(col, row)}
+												</div>
+											)}
+										</td>
+									))}
+									<td
+										className={`${bodyCellClass} text-center overflow-visible group-hover:bg-gray-50`}
+										onClick={(e) => e.stopPropagation()}
+									>
+										<div className="flex justify-center items-center gap-3 text-gray-400">
+											<IconTooltip label={labels.edit}>
 												<Pencil
 													size={16}
 													className="cursor-pointer hover:text-indigo-600 transition-colors"
-													onClick={() => onEdit?.(row)}
+													onClick={() =>
+														onEdit?.(row)
+													}
 												/>
+											</IconTooltip>
+											<IconTooltip label={labels.view}>
 												<Eye
 													size={16}
 													className="cursor-pointer hover:text-indigo-600 transition-colors"
@@ -89,9 +155,12 @@ const ListTable = ({
 															: onRowClick?.(row)
 													}
 												/>
+											</IconTooltip>
+											<IconTooltip
+												label={labels.download}
+											>
 												<Download
 													size={16}
-													title="Download CSV"
 													className={`transition-colors ${
 														onDownload
 															? "cursor-pointer hover:text-indigo-600"
@@ -101,24 +170,41 @@ const ListTable = ({
 														onDownload?.(row)
 													}
 												/>
+											</IconTooltip>
+											<IconTooltip label={labels.delete}>
 												<Trash
 													size={16}
 													className="cursor-pointer hover:text-red-500 transition-colors"
-													onClick={() => onDelete?.(row)}
+													onClick={() =>
+														onDelete?.(row)
+													}
 												/>
-											</div>
-										</td>
-									</tr>
-								))}
-						</tbody>
-					</table>
+											</IconTooltip>
+											{onClone && (
+												<IconTooltip
+													label={labels.clone}
+												>
+													<Copy
+														size={16}
+														className="cursor-pointer hover:text-indigo-600 transition-colors"
+														onClick={() =>
+															onClone?.(row)
+														}
+													/>
+												</IconTooltip>
+											)}
+										</div>
+									</td>
+								</tr>
+							))}
+					</tbody>
+				</table>
 
-					{!loading && rows.length === 0 && (
-						<div className="p-6 text-center text-gray-500">
-							No data available
-						</div>
-					)}
-				</div>
+				{!loading && rows.length === 0 && (
+					<div className="p-6 text-center text-gray-500 border border-gray-200 rounded-lg bg-white">
+						No data available
+					</div>
+				)}
 			</div>
 		</div>
 	);

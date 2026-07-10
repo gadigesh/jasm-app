@@ -12,3 +12,11 @@ export const cellEditInputClass =
 
 export const modalCancelBtnClass =
 	"px-5 py-2 text-sm font-medium text-[#64748B] border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors";
+
+export const DUPLICATE_NAME_ERROR =
+	"Same name already exists. Please change the name.";
+
+export const formInputErrorRingClass =
+	"border-red-500 focus:border-red-500 focus:ring-red-500/20";
+
+export const formFieldErrorTextClass = "text-xs text-red-500 mt-1";

@@ -11,6 +11,7 @@ import {
 	formInputLgClass,
 	modalCancelBtnClass,
 } from "../../utils/formStyles";
+import ValidatedNameInput from "../common/ValidatedNameInput";
 import { useDropzone } from "react-dropzone";
 
 const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
@@ -23,6 +24,10 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [uploadPhase, setUploadPhase] = useState("processing");
+	const [nameValidation, setNameValidation] = useState({
+		isDuplicate: false,
+		isChecking: false,
+	});
 
 	const onDrop = useCallback((acceptedFiles) => {
 		if (acceptedFiles?.length) {
@@ -50,7 +55,7 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 	};
 
 	const handleSubmit = async () => {
-		if (isSubmitting) return;
+		if (isSubmitting || nameValidation.isDuplicate) return;
 
 		if (!assetName?.trim()) {
 			showError("Please enter an asset source name");
@@ -121,6 +126,7 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 		setAssetName("");
 		setUniqueColumn("");
 		setActiveTab("file");
+		setNameValidation({ isDuplicate: false, isChecking: false });
 		resetProgress();
 		onClose();
 	};
@@ -138,17 +144,17 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 			<div className={isSubmitting ? "pointer-events-none select-none" : ""}>
 			<div className="grid grid-cols-2 gap-4 mb-4">
 				<div>
-					<label className="block text-sm font-bold text-gray-900 mb-1">
-						Asset Source Name{" "}
-						<span className="text-red-500">*</span>
-					</label>
-					<input
-						type="text"
+					<ValidatedNameInput
+						label="Asset Source Name"
+						required
 						value={assetName}
 						onChange={(e) => setAssetName(e.target.value)}
 						placeholder="e.g. Summer Campaign"
-						autoComplete="new-password"
-						className={formInputLgClass}
+						accountId={accountId}
+						type="assetSource"
+						size="lg"
+						enabled={Boolean(accountId)}
+						onValidationChange={setNameValidation}
 					/>
 				</div>
 				<div>
@@ -274,7 +280,12 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 				<button
 					type="button"
 					onClick={handleSubmit}
-					disabled={isSubmitting || (!file && !url)}
+					disabled={
+						isSubmitting ||
+						nameValidation.isDuplicate ||
+						nameValidation.isChecking ||
+						(!file && !url)
+					}
 					className="px-6 py-2 bg-[#8B5CF6] text-white text-sm font-semibold rounded-lg hover:bg-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 				>
 					{isSubmitting ? "Uploading..." : "Upload"}

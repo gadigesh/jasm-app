@@ -20,7 +20,7 @@ const AssetViewTabs = () => {
 						onClick={() => navigate(tab.path)}
 						className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
 							isActive
-								? "bg-[#B600C9] text-white"
+								? "bg-[#B600C9] text-white hover:bg-[#9a00ab]"
 								: "bg-white text-[#B600C9] border border-[#B600C9] hover:bg-purple-50"
 						}`}
 					>

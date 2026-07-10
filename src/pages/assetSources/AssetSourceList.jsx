@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { Info } from "lucide-react";
 import AssetAccountHeader from "../../components/navigation/AssetAccountHeader";
 import {
 	SortAction,
@@ -10,17 +11,69 @@ import ListTable from "../../components/common/ListTable";
 import RowPerPage from "../../components/common/RowPerPage";
 import Pagination from "../../components/common/Pagination";
 import useBreadcrumbs from "../../hooks/useBreadCrumbs";
-import { asListTableHeaders } from "../../utils/constants";
+import { asListTableHeaders, formatListDate } from "../../utils/constants";
 import {
 	useGetAssetUploadsQuery,
 	useRetryUploadMutation,
 	useDeleteAssetSourceMutation,
+	useCloneAssetSourceMutation,
 } from "../../store/services/assetUpload";
+import { useGetCopyMatricesQuery } from "../../store/services/copyMatrix";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
-import AssetSourceUploadModal from "../../components/modals/AddASUploadModal";
+import AddAssetSourceFromCopyMatrixModal from "../../components/modals/AddAssetSourceFromCopyMatrixModal";
+import CloneNameModal from "../../components/modals/CloneNameModal";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import IconTooltip from "../../components/common/IconTooltip";
+import {
+	buildMappedCopyMatrixByUploadId,
+	mergeMappedCopyMatrices,
+} from "../../utils/copyMatrixHelpers";
+
+function getMappedCmNames(row) {
+	const names = [];
+	const seen = new Set();
+
+	const addName = (value) => {
+		const trimmed = String(value || "").trim();
+		if (!trimmed) return;
+		const key = trimmed.toLowerCase();
+		if (seen.has(key)) return;
+		seen.add(key);
+		names.push(trimmed);
+	};
+
+	for (const matrix of row.mappedCopyMatrices || []) {
+		if (!matrix?.name) continue;
+		if (matrix.status === "draft") {
+			addName(`${matrix.name} (draft)`);
+		} else if (
+			matrix.status === "completed" ||
+			matrix.status === "partial_success" ||
+			matrix.status === "Active"
+		) {
+			addName(matrix.name);
+		} else if (
+			matrix.status === "processing" ||
+			matrix.status === "pending"
+		) {
+			addName(`${matrix.name} (processing)`);
+		} else {
+			addName(matrix.name);
+		}
+	}
+
+	return names;
+}
+
+function formatMappedCmTooltip(names) {
+	if (!names.length) {
+		return "No mapped copy matrix for this asset source.";
+	}
+	return `Mapped CM:\n${names.map((name) => `• ${name}`).join("\n")}`;
+}
 
 const AssetSourceList = () => {
 	const navigate = useNavigate();
@@ -31,6 +84,7 @@ const AssetSourceList = () => {
 	const [filterStatus, setFilterStatus] = useState("all");
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState(null);
+	const [cloneTarget, setCloneTarget] = useState(null);
 	const { data: meData } = useGetMeQuery();
 	const activeAccountId = meData?.activeAccount?._id;
 
@@ -43,10 +97,40 @@ const AssetSourceList = () => {
 		skip: !activeAccountId,
 	});
 
+	const { data: copyMatrices = [] } = useGetCopyMatricesQuery(activeAccountId, {
+		skip: !activeAccountId,
+		refetchOnMountOrArgChange: true,
+	});
+
+	const mappedCmByUploadId = useMemo(
+		() => buildMappedCopyMatrixByUploadId(copyMatrices),
+		[copyMatrices]
+	);
+
 	// 2. MUTATION (Retry Upload)
 	const [retryUpload, { isLoading: isRetrying }] = useRetryUploadMutation();
 	const [deleteAssetSource, { isLoading: isDeleting }] =
 		useDeleteAssetSourceMutation();
+	const [cloneAssetSource, { isLoading: isCloning }] =
+		useCloneAssetSourceMutation();
+
+	const suggestCloneName = (name) => {
+		const base = String(name || "Untitled").trim();
+		return `${base} (Copy)`;
+	};
+
+	const confirmClone = async (name) => {
+		if (!cloneTarget) return;
+		try {
+			await cloneAssetSource({ id: cloneTarget._id, name }).unwrap();
+			showSuccess("Asset source cloned");
+			setCloneTarget(null);
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to clone asset source")
+			);
+		}
+	};
 
 	const confirmDelete = async () => {
 		if (!deleteTarget) return;
@@ -87,16 +171,30 @@ const AssetSourceList = () => {
 		if (!uploads) return [];
 
 		// Map Backend Data to UI Structure
-		let result = uploads.map((item) => ({
-			_id: item._id,
-			name: item.name || item.fileName?.replace(/\.[^.]+$/, "") || "Untitled",
-			updatedAt: item.updatedAt,
-			displayDate: new Date(item.updatedAt).toLocaleString(), // Formatted for UI
-			updatedBy: item.updatedBy || item.uploadedBy || "Unknown",
-			status: item.status, // pending, processing, completed, failed, partial_success
-			errorLog: item.errorLog,
-			validationErrors: item.validationErrors,
-		}));
+		let result = uploads.map((item) => {
+			const mappedCopyMatrices = mergeMappedCopyMatrices(
+				item._id,
+				item.mappedCopyMatrices,
+				mappedCmByUploadId
+			);
+
+			return {
+				_id: item._id,
+				name:
+					item.name ||
+					item.fileName?.replace(/\.[^.]+$/, "") ||
+					"Untitled",
+				copyMatrixId: item.copyMatrixId || null,
+				mappedCopyMatrix: mappedCopyMatrices[0] || null,
+				mappedCopyMatrices,
+				updatedAt: item.updatedAt,
+				displayDate: formatListDate(item.updatedAt),
+				updatedBy: item.updatedBy || item.uploadedBy || "Unknown",
+				status: item.status,
+				errorLog: item.errorLog,
+				validationErrors: item.validationErrors,
+			};
+		});
 
 		// Filter
 		if (filterStatus !== "all") {
@@ -119,11 +217,43 @@ const AssetSourceList = () => {
 		});
 
 		return result;
-	}, [uploads, sortBy, filterStatus]);
+	}, [uploads, sortBy, filterStatus, mappedCmByUploadId]);
 
 	// 5. DEFINE COLUMNS
 	const columns = useMemo(() => {
 		return asListTableHeaders.map((col) => {
+			if (col.key === "mappedCm") {
+				return {
+					...col,
+					headerRender: () => (
+						<span className="inline-flex items-center justify-center gap-1.5">
+							<span>Mapped CM</span>
+							<IconTooltip
+								label="Hover to see mapped copy matrix names for this asset source."
+								position="bottom"
+								className="cursor-pointer text-gray-400 hover:text-indigo-600 transition-colors"
+							>
+								<Info size={18} />
+							</IconTooltip>
+						</span>
+					),
+					render: (_, row) => {
+						const mappedNames = getMappedCmNames(row);
+						const tooltipLabel = formatMappedCmTooltip(mappedNames);
+
+						return (
+							<IconTooltip
+								label={tooltipLabel}
+								position="bottom"
+								className="cursor-pointer text-gray-400 hover:text-indigo-600 transition-colors"
+							>
+								<Info size={18} />
+							</IconTooltip>
+						);
+					},
+				};
+			}
+
 			// --- STATUS COLUMN ---
 			if (col.key === "status") {
 				return {
@@ -256,6 +386,7 @@ const AssetSourceList = () => {
 					<AddButton
 						key="AddButton"
 						label="Add New"
+						tooltip="Create asset source from copy matrix"
 						onClick={() => setIsUploadModalOpen(true)}
 					/>,
 				]}
@@ -288,6 +419,14 @@ const AssetSourceList = () => {
 						}
 					}}
 					onDelete={(row) => setDeleteTarget(row)}
+					onClone={(row) => setCloneTarget(row)}
+					tooltips={{
+						edit: "Edit asset source",
+						view: "View asset source",
+						download: "Download CSV",
+						delete: "Delete asset source",
+						clone: "Clone asset source",
+					}}
 				/>
 				<div className="px-6">
 					<div className="flex items-center justify-between">
@@ -300,10 +439,24 @@ const AssetSourceList = () => {
 					</div>
 				</div>
 			</div>
-			<AssetSourceUploadModal
+			<AddAssetSourceFromCopyMatrixModal
 				isOpen={isUploadModalOpen}
 				onClose={() => setIsUploadModalOpen(false)}
 				accountId={activeAccountId}
+			/>
+
+			<CloneNameModal
+				isOpen={!!cloneTarget}
+				onClose={() => setCloneTarget(null)}
+				onConfirm={confirmClone}
+				isLoading={isCloning}
+				title="Clone asset source"
+				description={`Create a copy of "${cloneTarget?.name}" with a new name.`}
+				defaultName={
+					cloneTarget ? suggestCloneName(cloneTarget.name) : ""
+				}
+				accountId={activeAccountId}
+				nameType="assetSource"
 			/>
 
 			<ConfirmDialog

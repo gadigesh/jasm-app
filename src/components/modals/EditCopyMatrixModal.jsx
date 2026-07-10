@@ -1,33 +1,69 @@
 import React, { useState, useEffect } from "react";
 import { X, Table2, ArrowRight } from "lucide-react";
 import { showSuccess, showError } from "../../utils/toastMsg";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { useUpdateCopyMatrixMutation } from "../../store/services/copyMatrix";
+import ValidatedNameInput from "../common/ValidatedNameInput";
+import { isCopyMatrixSynced } from "../../utils/copyMatrixHelpers";
 
-const EditCopyMatrixModal = ({ isOpen, onClose, matrix, onEditSheet }) => {
+const EditCopyMatrixModal = ({
+	isOpen,
+	onClose,
+	matrix,
+	accountId,
+	onEditSheet,
+}) => {
 	const [updateCopyMatrix, { isLoading }] = useUpdateCopyMatrixMutation();
 	const [status, setStatus] = useState("Active");
+	const [name, setName] = useState("");
+	const [nameValidation, setNameValidation] = useState({
+		isDuplicate: false,
+		isChecking: false,
+	});
+
+	const isSynced = isCopyMatrixSynced(matrix);
+	const canEditName = !isSynced;
 
 	useEffect(() => {
-		if (matrix) {
-			setStatus(matrix.status || "Active");
-		}
+		if (!matrix) return;
+		setStatus(matrix.status || "Active");
+		setName(matrix.name || "");
+		setNameValidation({ isDuplicate: false, isChecking: false });
 	}, [matrix]);
 
 	if (!isOpen || !matrix) return null;
 
+	const canSubmit =
+		!isLoading &&
+		(!canEditName ||
+			(name.trim().length > 0 &&
+				!nameValidation.isDuplicate &&
+				!nameValidation.isChecking));
+
 	const handleSubmit = async (e) => {
 		e.preventDefault();
+		if (!canSubmit) return;
+
 		try {
-			const apiStatus =
-				status === "Active" ? "completed" : "failed";
-			await updateCopyMatrix({
+			const apiStatus = status === "Active" ? "completed" : "failed";
+			const payload = {
 				id: matrix._id,
+				accountId,
 				status: apiStatus,
-			}).unwrap();
-			showSuccess("Status updated");
+			};
+
+			if (canEditName && name.trim() && name.trim() !== matrix.name) {
+				payload.name = name.trim();
+			}
+
+			await updateCopyMatrix(payload).unwrap();
+
+			showSuccess(
+				payload.name ? "Copy matrix updated" : "Status updated"
+			);
 			onClose();
 		} catch (error) {
-			showError(error?.data?.message || "Failed to update");
+			showError(getApiErrorMessage(error, "Failed to update copy matrix"));
 		}
 	};
 
@@ -53,17 +89,39 @@ const EditCopyMatrixModal = ({ isOpen, onClose, matrix, onEditSheet }) => {
 						Edit Copy Matrix
 					</h2>
 					<p className="text-sm text-gray-500 mb-6">
-						Update status or edit the sheet data
+						{canEditName
+							? "Update name, status, or edit the sheet data"
+							: "Update status or edit the sheet data"}
 					</p>
 
 					<form onSubmit={handleSubmit} className="space-y-5">
 						<div>
-							<label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-								Name
-							</label>
-							<div className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium text-gray-800">
-								{matrix.name}
-							</div>
+							{canEditName ? (
+								<ValidatedNameInput
+									label="Name"
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									placeholder="Copy matrix name"
+									accountId={accountId}
+									type="copyMatrix"
+									excludeId={matrix._id}
+									enabled={Boolean(accountId)}
+									onValidationChange={setNameValidation}
+								/>
+							) : (
+								<>
+									<label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+										Name
+									</label>
+									<div className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium text-gray-800">
+										{matrix.name}
+									</div>
+									<p className="text-xs text-gray-500 mt-1">
+										Name cannot be changed while synced to
+										an asset source.
+									</p>
+								</>
+							)}
 						</div>
 
 						<div>
@@ -132,10 +190,10 @@ const EditCopyMatrixModal = ({ isOpen, onClose, matrix, onEditSheet }) => {
 							</button>
 							<button
 								type="submit"
-								disabled={isLoading}
+								disabled={!canSubmit}
 								className="px-6 py-2.5 bg-[#B600C9] text-white rounded-lg text-sm font-semibold hover:bg-[#9a00ab] disabled:opacity-50 shadow-sm"
 							>
-								{isLoading ? "Saving..." : "Save status"}
+								{isLoading ? "Saving..." : "Save"}
 							</button>
 						</div>
 					</form>

@@ -36,6 +36,7 @@ const FilterDropdown = ({ onFilter, currentFilter = "all" }) => {
 		<div className="relative" ref={dropdownRef}>
 			<button
 				onClick={() => setIsOpen(!isOpen)}
+				title="Filter list"
 				className={`flex items-center space-x-2 px-4 py-2 border rounded-lg transition-all font-medium text-sm ${
 					isOpen || isActive
 						? "border-[#7C3AED] bg-purple-50 text-[#7C3AED]"
