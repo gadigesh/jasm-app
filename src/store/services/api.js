@@ -1,13 +1,9 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { showSuccess, showError } from "../../utils/toastMsg";
-
-const BASE_URL =
-	process.env.NODE_ENV === "production"
-		? "https://jasm-app-sever.onrender.com"
-		: "http://localhost:3333";
+import { API_BASE_URL } from "../../utils/apiConfig";
 
 const baseQuery = fetchBaseQuery({
-	baseUrl: BASE_URL,
+	baseUrl: API_BASE_URL,
 	credentials: "include",
 });
 

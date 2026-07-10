@@ -17,6 +17,10 @@ import {
 	useFinishAssetSourceMutation,
 } from "../../store/services/assetUpload";
 import { showSuccess, showError } from "../../utils/toastMsg";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import ValidatedNameInput from "../../components/common/ValidatedNameInput";
+import { useGetMeQuery } from "../../store/services/userAuthApi";
+import { getDeletedAssetSourceNames } from "../../utils/copyMatrixHelpers";
 
 const AssetSourcePreview = ({ readOnly = false }) => {
 	const { id } = useParams();
@@ -27,6 +31,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const [rowsPerPage, setRowsPerPage] = useState(10);
 	const [name, setName] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
+	const [nameValidation, setNameValidation] = useState({
+		isDuplicate: false,
+		isChecking: false,
+	});
 
 	const { data: asset, isLoading: isAssetLoading, refetch: refetchAsset } =
 		useGetAssetSourceQuery(id, { refetchOnMountOrArgChange: true });
@@ -66,19 +74,45 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		total: 0,
 	};
 
+	const { data: meData } = useGetMeQuery();
+	const accountId = asset?.accountId || meData?.activeAccount?._id;
 	const savedName = asset?.name || "";
-	const displayName = name || savedName;
+	const deletedAssetSourceNames = getDeletedAssetSourceNames(asset);
+	const requireNewAssetSourceName = Boolean(
+		location.state?.requireNewAssetSourceName
+	);
+	const suggestedAssetSourceName = String(
+		location.state?.suggestedAssetSourceName || ""
+	).trim();
+	const returnPath = location.state?.returnPath || "/copy-matrix";
+	const isRecreateDraft =
+		isDraft &&
+		(requireNewAssetSourceName ||
+			deletedAssetSourceNames.length > 0);
+	const displayName = name;
 	const loading = isAssetLoading || isRowsLoading;
 	const isBusy = isFinishing || isSaving;
+	const canFinishDraft =
+		isDraft &&
+		displayName.trim().length > 0 &&
+		!nameValidation.isDuplicate &&
+		!nameValidation.isChecking;
 
 	useEffect(() => {
-		if (asset?.name) setName(asset.name);
-	}, [asset?.name]);
-
-	useEffect(() => {
+		setName("");
 		setPendingEdits({});
 		setPage(1);
 	}, [id]);
+
+	useEffect(() => {
+		if (!asset || isRecreateDraft) return;
+		if (asset.name) setName(asset.name);
+	}, [asset?.name, asset?._id, isRecreateDraft]);
+
+	useEffect(() => {
+		if (!requireNewAssetSourceName) return;
+		setName(suggestedAssetSourceName);
+	}, [id, requireNewAssetSourceName, suggestedAssetSourceName]);
 
 	useEffect(() => {
 		if (!location.state?.refreshFromCopyMatrix) return;
@@ -120,14 +154,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		try {
 			const saved = await savePendingEdits();
 			if (saved) {
-				await refetchAsset();
-				await refetchRows();
 				showSuccess("Changes saved");
-			} else {
-				showError("No changes to save");
+				navigate("/asset-sources", { replace: true });
+				return;
 			}
+			showError("No changes to save");
 		} catch (error) {
-			showError(error?.data?.message || "Failed to save changes");
+			showError(getApiErrorMessage(error));
 		}
 	};
 
@@ -144,26 +177,31 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	};
 
 	const handleFinish = async () => {
-		if (!isDraft) return;
+		if (!isDraft || !canFinishDraft) return;
 		const assetSourceName = displayName.trim();
 		if (!assetSourceName) {
 			showError("Asset source name is required");
 			return;
 		}
 		try {
-			await savePendingEdits();
+			try {
+				await savePendingEdits();
+			} catch (error) {
+				showError(getApiErrorMessage(error));
+				return;
+			}
+
 			const result = await finishAssetSource({
 				id,
 				assetName: assetSourceName,
 			}).unwrap();
 
-			const finalName = result?.data?.name || assetSourceName;
-			setName(finalName);
-			await refetchAsset();
-			await refetchRows();
-			showSuccess("Asset source saved — you can continue editing");
+			showSuccess(
+				result?.message || "Asset source saved successfully"
+			);
+			navigate("/asset-sources", { replace: true });
 		} catch (error) {
-			showError(error?.data?.message || "Failed to save asset source");
+			showError(getApiErrorMessage(error));
 		}
 	};
 
@@ -181,21 +219,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 										navigate("/asset-sources")
 									}
 								/>,
-								<ExportButton
-									key="export"
-									onClick={handleDownload}
-								/>,
+								// <ExportButton
+								// 	key="export"
+								// 	onClick={handleDownload}
+								// />,
 						  ]
 						: [
 								<BackButton
 									key="back"
 									label="Back"
-									onClick={() => navigate("/copy-matrix")}
+									onClick={() => navigate(returnPath)}
 								/>,
-								<ExportButton
-									key="export"
-									onClick={handleDownload}
-								/>,
+								// <ExportButton
+								// 	key="export"
+								// 	onClick={handleDownload}
+								// />,
 								<CancelButton
 									key="cancel"
 									onClick={() =>
@@ -218,7 +256,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 											? handleFinish
 											: handleSaveChanges
 									}
-									disabled={isBusy}
+									disabled={
+										isBusy ||
+										(isDraft && !canFinishDraft)
+									}
 								/>,
 						  ]
 				}
@@ -227,35 +268,47 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			<div className="px-8 py-4 border-b">
 				<h1 className="text-2xl font-bold text-[#413d42]">
 					{displayName ||
+						savedName ||
 						(readOnly ? "Asset Source View" : "Asset Source Edit")}
 				</h1>
 				<p className="text-sm text-gray-500 mt-1">
 					{readOnly
 						? "View only — use the pencil icon on the list to edit"
 						: isDraft
-						? "Set the asset source name, edit cells, then Finish"
+						? requireNewAssetSourceName || isRecreateDraft
+							? "Edit the asset source name if needed, edit cells, then Finish"
+							: "Set the asset source name, edit cells, then Finish"
 						: "Click any cell to edit · Save changes when done"}
 				</p>
 			</div>
 
 			<div className="px-8 py-4 border-b bg-gray-50">
-				<div className="flex flex-wrap items-end gap-6">
+				<div className="flex flex-wrap items-start gap-6">
 					<div className="min-w-[200px]">
-						<label className="block text-sm font-semibold text-gray-700 mb-1">
-							Asset Source Name
-						</label>
 						{!readOnly && isDraft ? (
-							<input
-								type="text"
-								value={displayName}
-								onChange={(e) => setName(e.target.value)}
-								placeholder="e.g. Summer Campaign"
-								className="w-full max-w-md px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 focus:border-[#B600C9]"
-							/>
+							<>
+								<ValidatedNameInput
+									label="Asset Source Name"
+									value={displayName}
+									onChange={(e) => setName(e.target.value)}
+									placeholder="e.g. Summer Campaign"
+									accountId={accountId}
+									type="assetSource"
+									excludeId={id}
+									enabled={Boolean(accountId)}
+									className="max-w-md"
+									onValidationChange={setNameValidation}
+								/>
+							</>
 						) : (
-							<div className="w-full max-w-md px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm font-medium text-gray-800">
-								{displayName}
-							</div>
+							<>
+								<label className="block text-sm font-semibold text-gray-700 mb-1">
+									Asset Source Name
+								</label>
+								<div className="w-full max-w-md px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm font-medium text-gray-800">
+									{displayName}
+								</div>
+							</>
 						)}
 					</div>
 					{asset?.uniqueColumn && (

@@ -56,7 +56,16 @@ const assetUpload = api.injectEndpoints({
 				url: `/source/${id}`,
 				method: "DELETE",
 			}),
-			invalidatesTags: ["AssetUploads"],
+			invalidatesTags: ["AssetUploads", "CopyMatrices"],
+		}),
+
+		cloneAssetSource: builder.mutation({
+			query: ({ id, name }) => ({
+				url: `/source/${id}/clone`,
+				method: "POST",
+				body: { name },
+			}),
+			invalidatesTags: ["AssetUploads", "AssetSourceRows"],
 		}),
 
 		retryUpload: builder.mutation({
@@ -87,6 +96,7 @@ export const {
 	useUpdateAssetSourceRowsMutation,
 	useFinishAssetSourceMutation,
 	useDeleteAssetSourceMutation,
+	useCloneAssetSourceMutation,
 	useRetryUploadMutation,
 	useUploadAssetSourceMutation,
 } = assetUpload;

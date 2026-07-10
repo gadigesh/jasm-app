@@ -6,6 +6,8 @@ import React, {
 } from "react";
 import RowPerPage from "./RowPerPage";
 import Pagination from "./Pagination";
+import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
+import { cellEditInputClass } from "../../utils/formStyles";
 
 const EditableSheetTable = forwardRef(
 	(
@@ -20,6 +22,7 @@ const EditableSheetTable = forwardRef(
 			onRowsPerPageChange,
 			onCellChange,
 			readOnly = false,
+			readOnlyColumns = [],
 		},
 		ref
 	) => {
@@ -74,7 +77,7 @@ const EditableSheetTable = forwardRef(
 		);
 
 		const startEdit = (rowId, col, value) => {
-			if (readOnly) return;
+			if (readOnly || readOnlyColumns.includes(col)) return;
 			setEditingCell(`${rowId}-${col}`);
 			setEditValue(value ?? "");
 		};
@@ -107,6 +110,13 @@ const EditableSheetTable = forwardRef(
 			);
 		}
 
+		const hasRowIdColumn = columns.includes(AUTO_ROW_ID_COLUMN);
+		const showRowNumberColumn = !hasRowIdColumn;
+		const stickyRowRefClass =
+			"sticky left-0 z-30 bg-gray-50 border-r border-gray-200";
+		const stickyRowRefCellClass =
+			"sticky left-0 z-10 bg-white border-r border-gray-100";
+
 		return (
 			<>
 				<div
@@ -121,13 +131,22 @@ const EditableSheetTable = forwardRef(
 							}`}
 						>
 							<tr>
-								<th className="px-4 py-3 font-medium text-xs sticky top-0 left-0 z-30 bg-gray-50 border-b border-gray-200">
-									#
-								</th>
+								{showRowNumberColumn && (
+									<th
+										className={`px-4 py-3 font-medium text-xs sticky top-0 ${stickyRowRefClass} border-b`}
+									>
+										#
+									</th>
+								)}
 								{columns.map((col) => (
 									<th
 										key={col}
-										className="px-4 py-3 font-medium text-xs whitespace-nowrap sticky top-0 z-20 bg-gray-50 border-b border-gray-200"
+										className={`px-4 py-3 font-medium text-xs whitespace-nowrap sticky top-0 z-20 bg-gray-50 border-b border-gray-200 ${
+											hasRowIdColumn &&
+											col === AUTO_ROW_ID_COLUMN
+												? stickyRowRefClass
+												: ""
+										}`}
 									>
 										{col}
 									</th>
@@ -137,18 +156,31 @@ const EditableSheetTable = forwardRef(
 						<tbody className="divide-y divide-gray-100">
 							{rows.map((row) => (
 								<tr key={row._id} className="hover:bg-gray-50">
-									<td className="px-4 py-3 text-gray-400 sticky left-0 z-10 bg-white border-r border-gray-100">
-										{row.rowIndex}
-									</td>
+									{showRowNumberColumn && (
+										<td
+											className={`px-4 py-3 text-gray-400 ${stickyRowRefCellClass}`}
+										>
+											{row.rowIndex}
+										</td>
+									)}
 									{columns.map((col) => {
 										const cellKey = `${row._id}-${col}`;
 										const isEditing = editingCell === cellKey;
+										const isCellReadOnly =
+											readOnly ||
+											readOnlyColumns.includes(col);
 										return (
 											<td
 												key={col}
-												className="px-2 py-1 max-w-[200px]"
+												className={`px-2 py-1 max-w-[200px] ${
+													hasRowIdColumn &&
+													col === AUTO_ROW_ID_COLUMN
+														? stickyRowRefCellClass
+														: ""
+												}`}
 												onClick={() =>
 													!isEditing &&
+													!isCellReadOnly &&
 													startEdit(
 														row._id,
 														col,
@@ -175,13 +207,13 @@ const EditableSheetTable = forwardRef(
 																col
 															)
 														}
-														className="w-full px-2 py-1 border border-[#B600C9] rounded text-sm focus:outline-none"
+														className={cellEditInputClass}
 													/>
 												) : (
 													<span
-														className={`block px-2 py-2 truncate rounded ${
-															readOnly
-																? ""
+														className={`block px-2 py-2 truncate rounded text-gray-900 ${
+															isCellReadOnly
+																? "bg-gray-50 text-gray-600"
 																: "cursor-text hover:bg-purple-50"
 														}`}
 														title={row[col] || ""}
