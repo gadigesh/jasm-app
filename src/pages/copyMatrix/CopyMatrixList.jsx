@@ -83,9 +83,7 @@ const CopyMatrixList = () => {
 		isFetching,
 	} = useGetCopyMatricesQuery(activeAccountId, {
 		skip: !activeAccountId,
-		refetchOnMountOrArgChange: activeAccountId,
-		refetchOnFocus: false,
-		refetchOnReconnect: false,
+		refetchOnMountOrArgChange: true,
 	});
 
 	const [deleteCopyMatrix, { isLoading: isDeleting }] =

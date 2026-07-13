@@ -10,7 +10,6 @@ import {
 import { formInputClass, modalCancelBtnClass } from "../../utils/formStyles";
 import { showError, showWarning } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
-import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
 
 const AddAssetSourceFromCopyMatrixModal = ({
 	isOpen,
@@ -95,10 +94,13 @@ const AddAssetSourceFromCopyMatrixModal = ({
 			selectedMatrix?.name || search.trim();
 
 		try {
+			// Do not override CM unique column — backend uses matrix.uniqueColumn.
 			const result = await finishCopyMatrix({
 				id: selectedId,
 				forceNewAssetSource: true,
-				uniqueColumn: AUTO_ROW_ID_COLUMN,
+				...(selectedMatrix?.uniqueColumn
+					? { uniqueColumn: selectedMatrix.uniqueColumn }
+					: {}),
 			}).unwrap();
 
 			const assetUploadId = result?.data?.assetUploadId;

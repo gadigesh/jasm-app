@@ -95,6 +95,7 @@ const AssetSourceList = () => {
 		isFetching,
 	} = useGetAssetUploadsQuery(activeAccountId, {
 		skip: !activeAccountId,
+		refetchOnMountOrArgChange: true,
 	});
 
 	const { data: copyMatrices = [] } = useGetCopyMatricesQuery(activeAccountId, {

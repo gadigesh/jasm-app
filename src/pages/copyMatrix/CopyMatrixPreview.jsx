@@ -110,9 +110,11 @@ const CopyMatrixPreview = () => {
 	const invalidateAfterSave = (assetUploadId) => {
 		dispatch(
 			api.util.invalidateTags([
+				{ type: "CopyMatrices", id: "LIST" },
 				{ type: "CopyMatrices", id },
 				{ type: "CopyMatrixRows", id },
 				"AssetUploads",
+				"CopyMatrices",
 			])
 		);
 
@@ -239,15 +241,30 @@ const CopyMatrixPreview = () => {
 		if ((isDraft || canEditMatrixName) && matrix?.name && !name) {
 			setName(matrix.name);
 		}
-		if (columns.length && !uniqueColumn && (isDraft || isRecreate || creatingNewAssetSource)) {
-			setUniqueColumn(
-				columns.includes(AUTO_ROW_ID_COLUMN)
+		if (
+			columns.length &&
+			!uniqueColumn &&
+			(isDraft ||
+				isRecreate ||
+				creatingNewAssetSource ||
+				isUnsyncedFinalized ||
+				isSynced)
+		) {
+			const preferred =
+				matrix?.uniqueColumn ||
+				matrix?.defaultUniqueColumn ||
+				null;
+			const initial =
+				preferred && columns.includes(preferred)
+					? preferred
+					: columns.includes(AUTO_ROW_ID_COLUMN)
 					? AUTO_ROW_ID_COLUMN
-					: matrix?.defaultUniqueColumn || AUTO_ROW_ID_COLUMN
-			);
+					: columns[0] || AUTO_ROW_ID_COLUMN;
+			setUniqueColumn(initial);
 		}
 	}, [
 		matrix?.name,
+		matrix?.uniqueColumn,
 		matrix?.defaultUniqueColumn,
 		name,
 		columns,
@@ -256,6 +273,8 @@ const CopyMatrixPreview = () => {
 		canEditMatrixName,
 		isRecreate,
 		creatingNewAssetSource,
+		isUnsyncedFinalized,
+		isSynced,
 	]);
 
 	const handleCellChange = useCallback((rowId, rowData) => {
@@ -372,13 +391,15 @@ const CopyMatrixPreview = () => {
 	);
 
 	const handleUniqueColumnChange = async (column) => {
+		if (readOnly || isSynced) return;
 		setUniqueColumn(column);
 		await runUniqueColumnCheck(column);
 	};
 
 	/**
 	 * Before finish/create AS: re-check uniqueness.
-	 * If still not unique, fall back to Row ID and warn the user.
+	 * Only fall back to Row ID when there are duplicate non-empty values.
+	 * Empty cells are allowed (row-index keys are used for those rows).
 	 */
 	const resolveUniqueColumnForSave = async () => {
 		const requested = uniqueColumn || AUTO_ROW_ID_COLUMN;
@@ -390,26 +411,30 @@ const CopyMatrixPreview = () => {
 		const analysis = await runUniqueColumnCheck(requested, {
 			flushEdits: true,
 		});
+
 		if (analysis?.unique) {
+			if (analysis.emptyWarning) {
+				showWarning(analysis.emptyWarning);
+			}
 			return requested;
 		}
 
-		showWarning(
-			analysis?.message
-				? `${analysis.message}. Saving with "${AUTO_ROW_ID_COLUMN}" as the unique column.`
-				: `"${requested}" is not unique. Saving with "${AUTO_ROW_ID_COLUMN}".`
-		);
-		setUniqueColumn(AUTO_ROW_ID_COLUMN);
-		setUniqueAnalysis({
-			unique: true,
-			column: AUTO_ROW_ID_COLUMN,
-			duplicates: [],
-			emptyRowIndexes: [],
-			emptyRowIds: [],
-			message: null,
-		});
-		setDuplicateHighlight(null);
-		return AUTO_ROW_ID_COLUMN;
+		// True duplicates — do not silently switch to Row ID
+		if (analysis && (analysis.duplicates || []).length > 0) {
+			const err = new Error(
+				analysis.message ||
+					`"${requested}" has duplicate values. Fix them or pick another unique column.`
+			);
+			err.code = "UNIQUE_COLUMN_DUPLICATES";
+			throw err;
+		}
+
+		// Check failed (null) — still send the user's choice; backend will validate
+		if (!analysis) {
+			return requested;
+		}
+
+		return requested;
 	};
 
 	useEffect(() => {
@@ -435,6 +460,14 @@ const CopyMatrixPreview = () => {
 		}, 900);
 		return () => clearTimeout(timer);
 	}, [pendingEdits, uniqueColumn, uniqueAnalysis?.unique, runUniqueColumnCheck]);
+
+	// When unique column is restored from the matrix (or first set), verify it.
+	useEffect(() => {
+		if (!id || !uniqueColumn) return;
+		if (uniqueAnalysis?.column === uniqueColumn) return;
+		runUniqueColumnCheck(uniqueColumn, { flushEdits: false });
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- only when column identity changes
+	}, [id, uniqueColumn]);
 
 	const handleAddRow = async () => {
 		if (isAddingRow) return;
@@ -963,9 +996,7 @@ const CopyMatrixPreview = () => {
 	};
 
 	const hideRowIdColumn =
-		Boolean(uniqueColumn) &&
-		uniqueColumn !== AUTO_ROW_ID_COLUMN &&
-		uniqueAnalysis?.unique === true;
+		Boolean(uniqueColumn) && uniqueColumn !== AUTO_ROW_ID_COLUMN;
 
 	const cloneRowOptions = allRowsData?.rows || rows;
 
@@ -1037,7 +1068,11 @@ const CopyMatrixPreview = () => {
 	const goToCopyMatrixList = () => {
 		dispatch(
 			api.util.invalidateTags([
+				{ type: "CopyMatrices", id: "LIST" },
+				{ type: "CopyMatrices", id },
 				{ type: "CopyMatrixRows", id },
+				"AssetUploads",
+				"CopyMatrices",
 			])
 		);
 		navigate("/copy-matrix", { replace: true });
@@ -1114,6 +1149,20 @@ const CopyMatrixPreview = () => {
 					});
 				}
 
+				const resolvedUnique =
+					uniqueColumn || matrix?.uniqueColumn || "";
+				if (
+					resolvedUnique &&
+					resolvedUnique !== matrix?.uniqueColumn
+				) {
+					steps.push({
+						path: `/copy-matrix/${id}`,
+						method: "PUT",
+						body: { uniqueColumn: resolvedUnique },
+						phase: "saving",
+					});
+				}
+
 				if (steps.length === 0) {
 					showSuccess("No changes to save");
 					goToCopyMatrixList();
@@ -1180,6 +1229,7 @@ const CopyMatrixPreview = () => {
 				);
 
 				setPendingEdits({});
+				invalidateAfterSave(result?.data?.assetUploadId);
 				showSuccess(result?.message || "Copy matrix saved");
 				goToCopyMatrixList();
 				return;
@@ -1189,6 +1239,10 @@ const CopyMatrixPreview = () => {
 				const useRecreateFinish =
 					isRecreate || creatingNewAssetSource;
 				const resolvedUnique = await resolveUniqueColumnForSave();
+				const uniqueToSend =
+					resolvedUnique ||
+					matrix?.uniqueColumn ||
+					AUTO_ROW_ID_COLUMN;
 
 				const result = await runJsonStepsWithProgress(
 					[
@@ -1197,14 +1251,14 @@ const CopyMatrixPreview = () => {
 							method: "POST",
 							body: useRecreateFinish
 								? {
-										uniqueColumn: resolvedUnique,
+										uniqueColumn: uniqueToSend,
 										...(creatingNewAssetSource
 											? { forceNewAssetSource: true }
 											: {}),
 									}
 								: {
 										name: displayName.trim() || matrix?.name,
-										uniqueColumn: resolvedUnique,
+										uniqueColumn: uniqueToSend,
 									},
 							phase: "processing",
 						},
@@ -1237,7 +1291,11 @@ const CopyMatrixPreview = () => {
 				});
 			}
 		} catch (error) {
-			showError(getApiErrorMessage(error));
+			if (error?.code === "UNIQUE_COLUMN_DUPLICATES") {
+				showError(error.message);
+			} else {
+				showError(getApiErrorMessage(error));
+			}
 		} finally {
 			setIsSavingOp(false);
 			setSaveProgress(0);
@@ -1334,13 +1392,16 @@ const CopyMatrixPreview = () => {
 							)}
 						</div>
 
-						{(isDraft || isRecreate || creatingNewAssetSource) &&
+						{(isDraft ||
+							isRecreate ||
+							creatingNewAssetSource ||
+							isUnsyncedFinalized) &&
 							columns.length > 0 && (
 							<UniqueColumnSelector
 								columns={columns}
 								value={uniqueColumn || AUTO_ROW_ID_COLUMN}
 								onChange={handleUniqueColumnChange}
-								disabled={readOnly}
+								disabled={readOnly || isSynced}
 								isChecking={isCheckingUnique}
 								analysis={uniqueAnalysis}
 								className="!w-52 box-border shrink-0"
@@ -1364,11 +1425,39 @@ const CopyMatrixPreview = () => {
 							/>
 						)}
 
+						{isSynced &&
+							!isDraft &&
+							!isRecreate &&
+							!creatingNewAssetSource &&
+							(uniqueColumn || matrix?.uniqueColumn) && (
+							<div className="w-52 shrink-0">
+								<label className="block text-sm font-semibold text-gray-700 mb-1">
+									Unique Column
+								</label>
+								<div className="w-52 box-border px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-800 truncate">
+									{uniqueColumn || matrix?.uniqueColumn}
+								</div>
+								<p className="mt-1.5 max-w-52 text-xs text-gray-500">
+									Locked while synced with an asset source.
+								</p>
+							</div>
+						)}
+
 						{/* When unique selector is hidden, still show file meta */}
 						{!(
-							(isDraft || isRecreate || creatingNewAssetSource) &&
+							(isDraft ||
+								isRecreate ||
+								creatingNewAssetSource ||
+								isUnsyncedFinalized) &&
 							columns.length > 0
 						) &&
+							!(
+								isSynced &&
+								!isDraft &&
+								!isRecreate &&
+								!creatingNewAssetSource &&
+								(uniqueColumn || matrix?.uniqueColumn)
+							) &&
 							(matrix?.fileName ||
 								matrix?.processedRows != null) && (
 								<div className="text-sm text-gray-500 pt-7 whitespace-nowrap">
@@ -1389,7 +1478,12 @@ const CopyMatrixPreview = () => {
 					{!readOnly && (
 						<div className="shrink-0 pt-6">
 							<CopyMatrixSheetToolbar
-								disabled={isSavingOp || loading || isAddingRow || isAddingColumn}
+								disabled={
+									isSavingOp ||
+									loading ||
+									isAddingRow ||
+									isAddingColumn
+								}
 								onAddRow={handleAddRow}
 								onAddColumn={() => setSheetModal("addColumn")}
 								onCloneRow={() => setSheetModal("cloneRow")}

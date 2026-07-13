@@ -58,6 +58,9 @@ const UniqueColumnSelector = ({
 					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
 					<span>
 						Unique — {AUTO_ROW_ID_COLUMN} will be hidden.
+						{analysis?.emptyWarning
+							? " Empty cells use a row-index key."
+							: ""}
 					</span>
 				</p>
 			)}
@@ -76,7 +79,7 @@ const UniqueColumnSelector = ({
 							</p>
 						)}
 						<p className="mt-0.5 text-amber-700">
-							Fix cells or {AUTO_ROW_ID_COLUMN} is used on save.
+							Fix duplicate values before saving.
 						</p>
 					</div>
 				</div>
