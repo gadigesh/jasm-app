@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
 	Hash,
 	Columns3,
+	Type,
 	Calendar,
 	Copy,
 	Replace,
@@ -22,8 +23,13 @@ const MENU_SECTIONS = [
 			},
 			{
 				key: "from-other-column",
-				label: "From other column",
+				label: "Extract from column",
 				icon: Columns3,
+			},
+			{
+				key: "generate-text",
+				label: "Generate Text/Reporting",
+				icon: Type,
 			},
 			{
 				key: "select-date",

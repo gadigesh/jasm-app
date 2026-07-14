@@ -253,10 +253,39 @@ const copyMatrixApi = api.injectEndpoints({
 		}),
 
 		copyCopyMatrixColumnFrom: builder.mutation({
-			query: ({ id, targetColumn, sourceColumn, rowIds }) => ({
+			query: ({
+				id,
+				targetColumn,
+				sourceColumn,
+				template,
+				splitBy,
+				rowIds,
+			}) => ({
 				url: `/copy-matrix/${id}/columns/copy-from`,
 				method: "POST",
-				body: { targetColumn, sourceColumn, rowIds },
+				body: {
+					targetColumn,
+					sourceColumn,
+					template,
+					splitBy,
+					rowIds,
+				},
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "CopyMatrixRows", id },
+			],
+		}),
+
+		generateCopyMatrixColumnText: builder.mutation({
+			query: ({ id, targetColumn, template, rowIds }) => ({
+				url: `/copy-matrix/${id}/columns/generate-text`,
+				method: "POST",
+				body: {
+					targetColumn,
+					template,
+					rowIds,
+				},
 			}),
 			transformResponse: (response) => response.data,
 			invalidatesTags: (_r, _e, { id }) => [
@@ -492,6 +521,7 @@ export const {
 	useReorderCopyMatrixColumnsMutation,
 	useFillCopyMatrixColumnSequenceMutation,
 	useCopyCopyMatrixColumnFromMutation,
+	useGenerateCopyMatrixColumnTextMutation,
 	useFillCopyMatrixColumnDateMutation,
 	useReplaceCopyMatrixColumnMutation,
 	useApplyCopyMatrixColumnChangesMutation,

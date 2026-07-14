@@ -21,6 +21,7 @@ import {
 	useFinishAssetSourceMutation,
 	useFillAssetSourceColumnSequenceMutation,
 	useCopyAssetSourceColumnFromMutation,
+	useGenerateAssetSourceColumnTextMutation,
 	useFillAssetSourceColumnDateMutation,
 	useReplaceAssetSourceColumnMutation,
 	useApplyAssetSourceColumnChangesMutation,
@@ -46,6 +47,7 @@ import AddCopyMatrixColumnModal from "../../components/modals/copyMatrix/AddCopy
 import CloneCopyMatrixRowModal from "../../components/modals/copyMatrix/CloneCopyMatrixRowModal";
 import CloneCopyMatrixColumnModal from "../../components/modals/copyMatrix/CloneCopyMatrixColumnModal";
 import CopyMatrixFromColumnModal from "../../components/modals/copyMatrix/CopyMatrixFromColumnModal";
+import CopyMatrixGenerateTextModal from "../../components/modals/copyMatrix/CopyMatrixGenerateTextModal";
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
@@ -105,6 +107,8 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const [fillColumnSequence] = useFillAssetSourceColumnSequenceMutation();
 	const [copyColumnFrom, { isLoading: isCopyingFromColumn }] =
 		useCopyAssetSourceColumnFromMutation();
+	const [generateColumnText, { isLoading: isGeneratingText }] =
+		useGenerateAssetSourceColumnTextMutation();
 	const [fillColumnDate, { isLoading: isFillingDate }] =
 		useFillAssetSourceColumnDateMutation();
 	const [replaceColumn, { isLoading: isReplacingColumn }] =
@@ -167,7 +171,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const suggestedAssetSourceName = String(
 		location.state?.suggestedAssetSourceName || ""
 	).trim();
-	const returnPath = location.state?.returnPath || "/copy-matrix";
+	const returnPath = location.state?.returnPath || "/asset-sources";
 	const isRecreateDraft =
 		isDraft &&
 		(requireNewAssetSourceName || deletedAssetSourceNames.length > 0);
@@ -456,6 +460,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					anchorRect: anchorRect || null,
 				});
 				break;
+			case "generate-text":
+				setColumnModal({
+					type: "generate-text",
+					column: columnName,
+					anchorRect: anchorRect || null,
+				});
+				break;
 			case "select-date":
 				setColumnModal({
 					type: "select-date",
@@ -499,9 +510,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				});
 				break;
 			case "rename-column":
+				if (!isDraft) {
+					showWarning(
+						"Column names cannot be changed after the asset source is finalized"
+					);
+					return;
+				}
 				setRenamingColumn(columnName);
 				break;
 			case "delete-column":
+				if (!isDraft) {
+					showWarning(
+						"Columns cannot be deleted after the asset source is finalized"
+					);
+					return;
+				}
 				if (asset?.uniqueColumn === columnName) {
 					showWarning(
 						"Cannot delete the unique column. Change it first."
@@ -515,7 +538,11 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		}
 	};
 
-	const handleCopyFromColumn = async (sourceColumn) => {
+	const handleCopyFromColumn = async ({
+		sourceColumn,
+		template,
+		splitBy,
+	}) => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
@@ -525,20 +552,49 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				id,
 				targetColumn,
 				sourceColumn,
+				template,
+				splitBy,
 				rowIds: selected.length ? selected : undefined,
 			}).unwrap();
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Copied to ${result?.updated ?? 0} selected row${
+					? `Extracted to ${result?.updated ?? 0} selected row${
 							(result?.updated ?? 0) === 1 ? "" : "s"
 					  }`
-					: `Copied to ${result?.updated ?? 0} rows`
+					: `Extracted to ${result?.updated ?? 0} rows`
 			);
 			closeColumnModal();
 		} catch (error) {
-			showError(getApiErrorMessage(error, "Failed to copy column"));
+			showError(getApiErrorMessage(error, "Failed to extract column"));
+		}
+	};
+
+	const handleGenerateText = async ({ template }) => {
+		const targetColumn = columnModal?.column;
+		if (!targetColumn) return;
+		try {
+			await flushPendingEditsIfAny();
+			const selected = getSelectedRowIds().map(String);
+			const result = await generateColumnText({
+				id,
+				targetColumn,
+				template,
+				rowIds: selected.length ? selected : undefined,
+			}).unwrap();
+			setHighlightedColumn(targetColumn);
+			scheduleHighlightClear();
+			showSuccess(
+				selected.length
+					? `Text generated for ${result?.updated ?? 0} selected row${
+							(result?.updated ?? 0) === 1 ? "" : "s"
+					  }`
+					: `Text generated for ${result?.updated ?? 0} rows`
+			);
+			closeColumnModal();
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to generate text"));
 		}
 	};
 
@@ -794,6 +850,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	};
 
 	const handleColumnRenameSubmit = async (oldName, newName) => {
+		if (!isDraft) {
+			showWarning(
+				"Column names cannot be changed after the asset source is finalized"
+			);
+			setRenamingColumn(null);
+			return;
+		}
 		try {
 			await flushPendingEditsIfAny();
 			await renameColumn({ id, oldName, newName }).unwrap();
@@ -809,6 +872,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const handleDeleteColumnConfirm = async () => {
 		const column = columnModal?.column;
 		if (!column) return;
+		if (!isDraft) {
+			showWarning(
+				"Columns cannot be deleted after the asset source is finalized"
+			);
+			closeColumnModal();
+			return;
+		}
 		try {
 			await flushPendingEditsIfAny();
 			await deleteColumn({ id, column }).unwrap();
@@ -962,7 +1032,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
 					selectableRows={!readOnly}
 					columnMenus={!readOnly}
-					canRenameDeleteColumns={!readOnly}
+					canRenameDeleteColumns={!readOnly && isDraft}
 					selectedRowIds={selectedRowIds}
 					onSelectedRowIdsChange={setSelectedRowIds}
 					onColumnAction={handleColumnAction}
@@ -1012,9 +1082,35 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				onConfirm={handleCopyFromColumn}
 				targetColumn={columnModal?.column}
 				columns={columns}
+				sampleRows={rows}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
 				anchorRect={columnModal?.anchorRect}
 				selectedCount={selectedRowIds.length}
 				isLoading={isCopyingFromColumn}
+			/>
+
+			<CopyMatrixGenerateTextModal
+				isOpen={columnModal?.type === "generate-text"}
+				onClose={closeColumnModal}
+				onConfirm={handleGenerateText}
+				targetColumn={columnModal?.column}
+				columns={columns}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
+				anchorRect={columnModal?.anchorRect}
+				selectedCount={selectedRowIds.length}
+				isLoading={isGeneratingText}
 			/>
 
 			<CopyMatrixSelectDateModal

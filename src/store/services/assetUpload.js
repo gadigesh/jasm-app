@@ -104,10 +104,39 @@ const assetUpload = api.injectEndpoints({
 		}),
 
 		copyAssetSourceColumnFrom: builder.mutation({
-			query: ({ id, targetColumn, sourceColumn, rowIds }) => ({
+			query: ({
+				id,
+				targetColumn,
+				sourceColumn,
+				template,
+				splitBy,
+				rowIds,
+			}) => ({
 				url: `/source/${id}/columns/copy-from`,
 				method: "POST",
-				body: { targetColumn, sourceColumn, rowIds },
+				body: {
+					targetColumn,
+					sourceColumn,
+					template,
+					splitBy,
+					rowIds,
+				},
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "AssetSourceRows", id },
+			],
+		}),
+
+		generateAssetSourceColumnText: builder.mutation({
+			query: ({ id, targetColumn, template, rowIds }) => ({
+				url: `/source/${id}/columns/generate-text`,
+				method: "POST",
+				body: {
+					targetColumn,
+					template,
+					rowIds,
+				},
 			}),
 			transformResponse: (response) => response.data,
 			invalidatesTags: (_r, _e, { id }) => [
@@ -294,6 +323,7 @@ export const {
 	useUploadAssetSourceMutation,
 	useFillAssetSourceColumnSequenceMutation,
 	useCopyAssetSourceColumnFromMutation,
+	useGenerateAssetSourceColumnTextMutation,
 	useFillAssetSourceColumnDateMutation,
 	useReplaceAssetSourceColumnMutation,
 	useApplyAssetSourceColumnChangesMutation,

@@ -21,7 +21,6 @@ import {
 	useCloneCopyMatrixMutation,
 } from "../../store/services/copyMatrix";
 import AddCopyMatrixUploadModal from "../../components/modals/AddCopyMatrixUploadModal";
-import EditCopyMatrixModal from "../../components/modals/EditCopyMatrixModal";
 import CloneNameModal from "../../components/modals/CloneNameModal";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import { showSuccess, showError } from "../../utils/toastMsg";
@@ -68,7 +67,6 @@ const CopyMatrixList = () => {
 	const [sortBy, setSortBy] = useState("recent");
 	const [filterStatus, setFilterStatus] = useState("all");
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-	const [editTarget, setEditTarget] = useState(null);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [cloneTarget, setCloneTarget] = useState(null);
 
@@ -329,7 +327,7 @@ const CopyMatrixList = () => {
 					loading={
 						isLoading && !isFetching && matrices.length === 0
 					}
-					onEdit={(row) => setEditTarget(row)}
+					onEdit={goToEdit}
 					onView={goToView}
 					onDownload={handleDownload}
 					onDelete={(row) => setDeleteTarget(row)}
@@ -358,16 +356,6 @@ const CopyMatrixList = () => {
 				isOpen={isUploadModalOpen}
 				onClose={() => setIsUploadModalOpen(false)}
 				accountId={activeAccountId}
-			/>
-
-			<EditCopyMatrixModal
-				isOpen={!!editTarget}
-				matrix={editTarget}
-				accountId={activeAccountId}
-				onClose={() => setEditTarget(null)}
-				onEditSheet={(row) => {
-					goToEdit(row);
-				}}
 			/>
 
 			<CloneNameModal

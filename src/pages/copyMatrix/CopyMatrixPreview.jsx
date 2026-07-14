@@ -23,6 +23,7 @@ import {
 	useUpdateCopyMatrixRowsMutation,
 	useFillCopyMatrixColumnSequenceMutation,
 	useCopyCopyMatrixColumnFromMutation,
+	useGenerateCopyMatrixColumnTextMutation,
 	useFillCopyMatrixColumnDateMutation,
 	useReplaceCopyMatrixColumnMutation,
 	useApplyCopyMatrixColumnChangesMutation,
@@ -36,6 +37,7 @@ import AddCopyMatrixColumnModal from "../../components/modals/copyMatrix/AddCopy
 import CloneCopyMatrixRowModal from "../../components/modals/copyMatrix/CloneCopyMatrixRowModal";
 import CloneCopyMatrixColumnModal from "../../components/modals/copyMatrix/CloneCopyMatrixColumnModal";
 import CopyMatrixFromColumnModal from "../../components/modals/copyMatrix/CopyMatrixFromColumnModal";
+import CopyMatrixGenerateTextModal from "../../components/modals/copyMatrix/CopyMatrixGenerateTextModal";
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
@@ -162,6 +164,8 @@ const CopyMatrixPreview = () => {
 		useFillCopyMatrixColumnSequenceMutation();
 	const [copyColumnFrom, { isLoading: isCopyingFromColumn }] =
 		useCopyCopyMatrixColumnFromMutation();
+	const [generateColumnText, { isLoading: isGeneratingText }] =
+		useGenerateCopyMatrixColumnTextMutation();
 	const [fillColumnDate, { isLoading: isFillingDate }] =
 		useFillCopyMatrixColumnDateMutation();
 	const [replaceColumn, { isLoading: isReplacingColumn }] =
@@ -587,6 +591,13 @@ const CopyMatrixPreview = () => {
 					anchorRect: anchorRect || null,
 				});
 				break;
+			case "generate-text":
+				setColumnModal({
+					type: "generate-text",
+					column: columnName,
+					anchorRect: anchorRect || null,
+				});
+				break;
 			case "select-date":
 				setColumnModal({
 					type: "select-date",
@@ -654,7 +665,11 @@ const CopyMatrixPreview = () => {
 		}
 	};
 
-	const handleCopyFromColumn = async (sourceColumn) => {
+	const handleCopyFromColumn = async ({
+		sourceColumn,
+		template,
+		splitBy,
+	}) => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
@@ -664,20 +679,49 @@ const CopyMatrixPreview = () => {
 				id,
 				targetColumn,
 				sourceColumn,
+				template,
+				splitBy,
 				rowIds: selected.length ? selected : undefined,
 			}).unwrap();
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Copied to ${result?.updated ?? 0} selected row${
+					? `Extracted to ${result?.updated ?? 0} selected row${
 							(result?.updated ?? 0) === 1 ? "" : "s"
 					  }`
-					: `Copied to ${result?.updated ?? 0} rows`
+					: `Extracted to ${result?.updated ?? 0} rows`
 			);
 			closeColumnModal();
 		} catch (error) {
-			showError(getApiErrorMessage(error, "Failed to copy column"));
+			showError(getApiErrorMessage(error, "Failed to extract column"));
+		}
+	};
+
+	const handleGenerateText = async ({ template }) => {
+		const targetColumn = columnModal?.column;
+		if (!targetColumn) return;
+		try {
+			await flushPendingEditsIfAny();
+			const selected = getSelectedRowIds().map(String);
+			const result = await generateColumnText({
+				id,
+				targetColumn,
+				template,
+				rowIds: selected.length ? selected : undefined,
+			}).unwrap();
+			setHighlightedColumn(targetColumn);
+			scheduleHighlightClear();
+			showSuccess(
+				selected.length
+					? `Text generated for ${result?.updated ?? 0} selected row${
+							(result?.updated ?? 0) === 1 ? "" : "s"
+					  }`
+					: `Text generated for ${result?.updated ?? 0} rows`
+			);
+			closeColumnModal();
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to generate text"));
 		}
 	};
 
@@ -1560,9 +1604,35 @@ const CopyMatrixPreview = () => {
 				onConfirm={handleCopyFromColumn}
 				targetColumn={columnModal?.column}
 				columns={columns}
+				sampleRows={rows}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
 				anchorRect={columnModal?.anchorRect}
 				selectedCount={selectedRowIds.length}
 				isLoading={isCopyingFromColumn}
+			/>
+
+			<CopyMatrixGenerateTextModal
+				isOpen={columnModal?.type === "generate-text"}
+				onClose={closeColumnModal}
+				onConfirm={handleGenerateText}
+				targetColumn={columnModal?.column}
+				columns={columns}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
+				anchorRect={columnModal?.anchorRect}
+				selectedCount={selectedRowIds.length}
+				isLoading={isGeneratingText}
 			/>
 
 			<CopyMatrixSelectDateModal
