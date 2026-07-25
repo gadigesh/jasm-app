@@ -452,6 +452,7 @@ export const {
 	useDiscardAssetSourceDraftMutation,
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
+	useLazyGetAssetSourceRowsQuery,
 	useUpdateAssetSourceRowsMutation,
 	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,

@@ -632,6 +632,7 @@ export const {
 	useDiscardCopyMatrixDraftMutation,
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
+	useLazyGetCopyMatrixRowsQuery,
 	usePreviewCopyMatrixMutation,
 	useGetGsheetTabsMutation,
 	useFinishCopyMatrixMutation,

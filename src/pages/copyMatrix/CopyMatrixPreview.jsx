@@ -14,6 +14,7 @@ import ValidatedNameInput from "../../components/common/ValidatedNameInput";
 import {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
+	useLazyGetCopyMatrixRowsQuery,
 	useDeleteCopyMatrixMutation,
 	useAddCopyMatrixRowMutation,
 	useDeleteCopyMatrixRowMutation,
@@ -68,6 +69,7 @@ import {
 	replaceInColumnLocal,
 	cellText,
 	selectTargetRows,
+	rowValues,
 } from "../../utils/localSheetEdits";
 
 const CopyMatrixPreview = () => {
@@ -118,6 +120,7 @@ const CopyMatrixPreview = () => {
 	const [duplicateHighlight, setDuplicateHighlight] = useState(null);
 	const highlightTimeoutRef = useRef(null);
 	const duplicateHighlightTimeoutRef = useRef(null);
+	const uniqueCheckRequestRef = useRef(0);
 	const tableRef = useRef(null);
 
 	const collectEdits = useCallback(() => {
@@ -168,6 +171,7 @@ const CopyMatrixPreview = () => {
 			{ id, page, limit: rowsPerPage },
 			{ skip: !id }
 		);
+	const [fetchRowsPage] = useLazyGetCopyMatrixRowsQuery();
 	const { data: allRowsData } = useGetCopyMatrixRowsQuery(
 		{ id, page: 1, limit: 200 },
 		{ skip: !id || sheetModal !== "cloneRow" }
@@ -248,6 +252,32 @@ const CopyMatrixPreview = () => {
 		totalPages: 1,
 		total: 0,
 	};
+
+	/**
+	 * Column operations apply to the full sheet when no rows are selected.
+	 * Load every server page, then overlay unsaved local edits before deriving
+	 * patches so uniqueness validation sees exactly what the table shows.
+	 */
+	const getOperationRows = useCallback(async () => {
+		const total = Number(pagination.total || rows.length);
+		if (!id || total <= rows.length) return rows;
+
+		const pageCount = Math.max(1, Math.ceil(total / 200));
+		const pages = await Promise.all(
+			Array.from({ length: pageCount }, (_, index) =>
+				fetchRowsPage(
+					{ id, page: index + 1, limit: 200 },
+					false
+				).unwrap()
+			)
+		);
+		return pages
+			.flatMap((result) => result?.rows || [])
+			.map((row) => ({
+				...row,
+				...(pendingEditsRef.current[String(row._id)] || {}),
+			}));
+	}, [fetchRowsPage, id, pagination.total, rows]);
 
 	const matrixReady =
 		!isMatrixLoading && !isMatrixFetching && Boolean(matrix);
@@ -360,7 +390,7 @@ const CopyMatrixPreview = () => {
 	// Resume locally saved cell edits (create draft or completed).
 	useEffect(() => {
 		if (!accountId || !id || skipEditDraft) return;
-		const draft = readEditDraft("cm", accountId);
+		const draft = readEditDraft("cm", accountId, { entityId: id });
 		if (!draft || String(draft._id) !== String(id)) return;
 		const pending = draft.pendingEdits || {};
 		if (Object.keys(pending).length === 0) return;
@@ -457,8 +487,9 @@ const CopyMatrixPreview = () => {
 	);
 
 	const runUniqueColumnCheck = useCallback(
-		async (column, { flushEdits = true } = {}) => {
+		async (column) => {
 			if (!id || !column) return null;
+			const requestId = ++uniqueCheckRequestRef.current;
 			if (column === AUTO_ROW_ID_COLUMN) {
 				const analysis = {
 					unique: true,
@@ -468,21 +499,27 @@ const CopyMatrixPreview = () => {
 					emptyRowIds: [],
 					message: null,
 				};
-				applyUniqueAnalysis(analysis, column);
+				if (requestId === uniqueCheckRequestRef.current) {
+					applyUniqueAnalysis(analysis, column);
+				}
 				return analysis;
 			}
 			try {
 				const analysis = await checkUniqueColumn({
 					id,
 					column,
-					rows: flushEdits ? collectEdits() : [],
+					rows: collectEdits(),
 				}).unwrap();
-				applyUniqueAnalysis(analysis, column);
+				if (requestId === uniqueCheckRequestRef.current) {
+					applyUniqueAnalysis(analysis, column);
+				}
 				return analysis;
 			} catch (error) {
-				showError(
-					getApiErrorMessage(error, "Failed to check unique column")
-				);
+				if (requestId === uniqueCheckRequestRef.current) {
+					showError(
+						getApiErrorMessage(error, "Failed to check unique column")
+					);
+				}
 				return null;
 			}
 		},
@@ -505,9 +542,7 @@ const CopyMatrixPreview = () => {
 			return AUTO_ROW_ID_COLUMN;
 		}
 
-		const analysis = await runUniqueColumnCheck(requested, {
-			flushEdits: true,
-		});
+		const analysis = await runUniqueColumnCheck(requested);
 
 		if (analysis?.unique) {
 			if (analysis.emptyWarning) {
@@ -544,24 +579,22 @@ const CopyMatrixPreview = () => {
 		};
 	}, []);
 
-	// After the user edits cells while a column is marked not-unique, re-check
-	// so Row ID can hide once duplicates are fixed (before save).
+	// Re-check the selected unique column against every local draft edit.
 	useEffect(() => {
 		if (!uniqueColumn || uniqueColumn === AUTO_ROW_ID_COLUMN) return;
-		if (uniqueAnalysis?.unique !== false) return;
 		if (Object.keys(pendingEdits).length === 0) return;
 
 		const timer = setTimeout(() => {
 			runUniqueColumnCheck(uniqueColumn);
 		}, 900);
 		return () => clearTimeout(timer);
-	}, [pendingEdits, uniqueColumn, uniqueAnalysis?.unique, runUniqueColumnCheck]);
+	}, [pendingEdits, uniqueColumn, runUniqueColumnCheck]);
 
 	// When unique column is restored from the matrix (or first set), verify it.
 	useEffect(() => {
 		if (!id || !uniqueColumn) return;
 		if (uniqueAnalysis?.column === uniqueColumn) return;
-		runUniqueColumnCheck(uniqueColumn, { flushEdits: false });
+		runUniqueColumnCheck(uniqueColumn);
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- only when column identity changes
 	}, [id, uniqueColumn]);
 
@@ -737,8 +770,9 @@ const CopyMatrixPreview = () => {
 				try {
 					tableRef.current?.flushActiveEdit?.();
 					const selected = getSelectedRowIds().map(String);
+					const operationRows = await getOperationRows();
 					const patches = fillSequenceLocal(
-						rows,
+						operationRows,
 						columnName,
 						selected.length ? selected : undefined
 					);
@@ -858,8 +892,9 @@ const CopyMatrixPreview = () => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const patches = copyFromColumnLocal(
-				rows,
+				operationRows,
 				targetColumn,
 				sourceColumn,
 				template,
@@ -888,8 +923,9 @@ const CopyMatrixPreview = () => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const patches = generateTextLocal(
-				rows,
+				operationRows,
 				targetColumn,
 				template,
 				selected.length ? selected : undefined
@@ -957,8 +993,9 @@ const CopyMatrixPreview = () => {
 			}
 
 			if (alsoUpdate && targetColumn && template) {
+				const operationRows = await getOperationRows();
 				const targets = selectTargetRows(
-					rows,
+					operationRows,
 					selected.length ? selected : undefined
 				);
 				const applyResult = await applyColumnImages({
@@ -970,7 +1007,7 @@ const CopyMatrixPreview = () => {
 					dryRun: true,
 					rowSnapshots: targets.map((row) => ({
 						_id: row._id,
-						rowData: row.rowData,
+						rowData: rowValues(row),
 					})),
 				}).unwrap();
 				const patches = (applyResult?.updates || []).map((u) => ({
@@ -1012,8 +1049,9 @@ const CopyMatrixPreview = () => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const targets = selectTargetRows(
-				rows,
+				operationRows,
 				selected.length ? selected : undefined
 			);
 			const result = await applyColumnImages({
@@ -1025,7 +1063,7 @@ const CopyMatrixPreview = () => {
 				dryRun: true,
 				rowSnapshots: targets.map((row) => ({
 					_id: row._id,
-					rowData: row.rowData,
+					rowData: rowValues(row),
 				})),
 			}).unwrap();
 			const patches = (result?.updates || []).map((u) => ({
@@ -1065,8 +1103,9 @@ const CopyMatrixPreview = () => {
 				scope === "selected" ||
 				(scope === "all" && selected.length > 0);
 
+			const operationRows = await getOperationRows();
 			const patches = fillDateLocal(
-				rows,
+				operationRows,
 				column,
 				dateValue,
 				limitToSelected ? selected : undefined
@@ -1200,14 +1239,15 @@ const CopyMatrixPreview = () => {
 			const limitToSelected =
 				mode === "replace" ||
 				(mode === "replaceAll" && selected.length > 0);
+			const operationRows = await getOperationRows();
 			const targets = selectTargetRows(
-				rows,
+				operationRows,
 				limitToSelected ? selected : undefined
 			);
 
 			const matchedRows = [];
 			targets.forEach((row, offset) => {
-				const current = cellText(row.rowData?.[column]);
+				const current = cellText(rowValues(row)[column]);
 				const isMatch = query === "" ? current === "" : current.includes(query);
 				if (isMatch) {
 					matchedRows.push({
@@ -1414,9 +1454,11 @@ const CopyMatrixPreview = () => {
 					} catch {
 						// ignore delete failures on unused draft
 					}
-					const stored = accountId ? readEditDraft("cm", accountId) : null;
+					const stored = accountId
+						? readEditDraft("cm", accountId, { entityId: id })
+						: null;
 					if (stored && String(stored._id) === String(id)) {
-						clearEditDraft("cm", accountId);
+						clearEditDraft("cm", accountId, { entityId: id });
 					}
 				}
 				// Keep existing edit-draft so Edit can still ask Load / Discard.
@@ -1464,7 +1506,9 @@ const CopyMatrixPreview = () => {
 	};
 
 	const goToCopyMatrixList = () => {
-		if (accountId) clearEditDraft("cm", accountId);
+		if (accountId) {
+			clearEditDraft("cm", accountId, { entityId: id });
+		}
 		dispatch(
 			api.util.invalidateTags([
 				{ type: "CopyMatrices", id: "LIST" },
