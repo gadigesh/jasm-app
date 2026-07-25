@@ -123,7 +123,15 @@ const AssetSourceList = () => {
 
 	const openDraft = (draft) => {
 		if (!draft?._id) return;
-		navigate(`/asset-sources/${draft._id}/preview`);
+		navigate(`/asset-sources/${draft._id}/preview`, {
+			state: draft.isCreateDraft
+				? {
+						requireNewAssetSourceName: true,
+						suggestedAssetSourceName: draft.name || "",
+						returnPath: "/asset-sources",
+				  }
+				: undefined,
+		});
 	};
 
 	const openAddFlow = () => setIsUploadModalOpen(true);
@@ -134,10 +142,11 @@ const AssetSourceList = () => {
 		});
 	};
 
-	const getStoredDraft = () => readEditDraft("as", activeAccountId);
+	const getStoredDraft = (options) =>
+		readEditDraft("as", activeAccountId, options);
 
 	const handleAddClick = () => {
-		const draft = getStoredDraft();
+		const draft = getStoredDraft({ mode: "add" });
 		if (draft?._id) {
 			setDraftPrompt({ mode: "add", draft });
 			return;
@@ -146,7 +155,10 @@ const AssetSourceList = () => {
 	};
 
 	const handleEditClick = (row) => {
-		const draft = getStoredDraft();
+		const draft = getStoredDraft({
+			mode: "edit",
+			entityId: row?._id,
+		});
 		if (draft?._id) {
 			setDraftPrompt({ mode: "edit", draft, row });
 			return;
@@ -169,7 +181,7 @@ const AssetSourceList = () => {
 				if (draft?.isCreateDraft && draft?._id) {
 					await deleteAssetSource(draft._id).unwrap();
 				}
-				clearEditDraft("as", activeAccountId);
+				clearEditDraft("as", activeAccountId, { mode: "add" });
 				setDraftPrompt(null);
 				openAddFlow();
 				return;

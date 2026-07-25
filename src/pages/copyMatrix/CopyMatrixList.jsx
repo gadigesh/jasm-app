@@ -142,10 +142,11 @@ const CopyMatrixList = () => {
 		if (path) navigate(path, { state: skipEditDraft ? { skipEditDraft: true } : undefined });
 	};
 
-	const getStoredDraft = () => readEditDraft("cm", activeAccountId);
+	const getStoredDraft = (options) =>
+		readEditDraft("cm", activeAccountId, options);
 
 	const handleAddClick = () => {
-		const draft = getStoredDraft();
+		const draft = getStoredDraft({ mode: "add" });
 		if (draft?._id) {
 			setDraftPrompt({ mode: "add", draft });
 			return;
@@ -186,7 +187,10 @@ const CopyMatrixList = () => {
 	};
 
 	const goToEdit = (row) => {
-		const draft = getStoredDraft();
+		const draft = getStoredDraft({
+			mode: "edit",
+			entityId: row?._id,
+		});
 		if (draft?._id) {
 			setDraftPrompt({ mode: "edit", draft, row });
 			return;
@@ -209,7 +213,7 @@ const CopyMatrixList = () => {
 				if (draft?.isCreateDraft && draft?._id) {
 					await deleteCopyMatrix(draft._id).unwrap();
 				}
-				clearEditDraft("cm", activeAccountId);
+				clearEditDraft("cm", activeAccountId, { mode: "add" });
 				setDraftPrompt(null);
 				openAddFlow();
 				return;

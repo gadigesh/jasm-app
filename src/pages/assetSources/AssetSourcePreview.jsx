@@ -17,6 +17,7 @@ import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 import {
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
+	useLazyGetAssetSourceRowsQuery,
 	useUpdateAssetSourceRowsMutation,
 	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,
@@ -57,6 +58,7 @@ import {
 	replaceInColumnLocal,
 	cellText,
 	selectTargetRows,
+	rowValues,
 } from "../../utils/localSheetEdits";
 import { normalizeCellText } from "../../utils/normalizeCellText";
 import { suggestCloneColumnName } from "../../utils/copyMatrixColumnHelpers";
@@ -72,6 +74,13 @@ import CopyMatrixUpdateImagesModal from "../../components/modals/copyMatrix/Copy
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
+
+const isGenericAssetSourceName = (value) =>
+	["new asset source", "untitled"].includes(
+		String(value || "")
+			.trim()
+			.toLowerCase()
+	);
 
 const AssetSourcePreview = ({ readOnly = false }) => {
 	const { id } = useParams();
@@ -124,6 +133,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		{ id, page, limit: rowsPerPage },
 		{ skip: !id, refetchOnMountOrArgChange: true }
 	);
+	const [fetchRowsPage] = useLazyGetAssetSourceRowsQuery();
 	const { data: allRowsData } = useGetAssetSourceRowsQuery(
 		{ id, page: 1, limit: 200 },
 		{ skip: !id || sheetModal !== "cloneRow" }
@@ -212,6 +222,31 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		total: 0,
 	};
 
+	/**
+	 * Apply unselected column operations to the entire sheet, not only the
+	 * visible page. Pending local edits are overlaid before values are derived.
+	 */
+	const getOperationRows = useCallback(async () => {
+		const total = Number(pagination.total || rows.length);
+		if (!id || total <= rows.length) return rows;
+
+		const pageCount = Math.max(1, Math.ceil(total / 200));
+		const pages = await Promise.all(
+			Array.from({ length: pageCount }, (_, index) =>
+				fetchRowsPage(
+					{ id, page: index + 1, limit: 200 },
+					false
+				).unwrap()
+			)
+		);
+		return pages
+			.flatMap((result) => result?.rows || [])
+			.map((row) => ({
+				...row,
+				...(pendingEditsRef.current[String(row._id)] || {}),
+			}));
+	}, [fetchRowsPage, id, pagination.total, rows]);
+
 	const { data: meData } = useGetMeQuery();
 	const accountId = String(
 		asset?.accountId?._id || asset?.accountId || meData?.activeAccount?._id || ""
@@ -228,9 +263,16 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const requireNewAssetSourceName = Boolean(
 		location.state?.requireNewAssetSourceName
 	);
-	const suggestedAssetSourceName = String(
+	const requestedAssetSourceName = String(
 		location.state?.suggestedAssetSourceName || ""
 	).trim();
+	const copyMatrixName = String(asset?.copyMatrixName || "").trim();
+	const suggestedAssetSourceName =
+		(!requestedAssetSourceName ||
+			isGenericAssetSourceName(requestedAssetSourceName)) &&
+		copyMatrixName
+			? copyMatrixName
+			: requestedAssetSourceName;
 	const returnPath = location.state?.returnPath || "/asset-sources";
 	const isRecreateDraft =
 		isDraft &&
@@ -270,7 +312,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	// Resume locally saved cell edits (create draft or completed).
 	useEffect(() => {
 		if (!accountId || !id || skipEditDraft) return;
-		const draft = readEditDraft("as", accountId);
+		const draft = readEditDraft("as", accountId, { entityId: id });
 		if (!draft || String(draft._id) !== String(id)) return;
 		const pending = draft.pendingEdits || {};
 		if (Object.keys(pending).length === 0) return;
@@ -280,8 +322,20 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	useEffect(() => {
 		if (!asset || isRecreateDraft) return;
-		if (asset.name) setName(asset.name);
-	}, [asset?.name, asset?._id, isRecreateDraft]);
+		const initialName =
+			isDraft &&
+			isGenericAssetSourceName(asset.name) &&
+			asset.copyMatrixName
+				? asset.copyMatrixName
+				: asset.name;
+		if (initialName) setName(initialName);
+	}, [
+		asset?.name,
+		asset?._id,
+		asset?.copyMatrixName,
+		isDraft,
+		isRecreateDraft,
+	]);
 
 	useEffect(() => {
 		if (!requireNewAssetSourceName) return;
@@ -427,6 +481,22 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		if (!id || !asset?.uniqueColumn) return;
 		validateUniqueColumn([]).catch(() => {});
 	}, [id, asset?.uniqueColumn, validateUniqueColumn]);
+
+	// Keep unique-column feedback aligned with unsaved local operations/edits.
+	useEffect(() => {
+		if (!id || !asset?.uniqueColumn) return;
+		if (Object.keys(pendingEdits).length === 0) return;
+		const timer = window.setTimeout(() => {
+			validateUniqueColumn(collectEdits()).catch(() => {});
+		}, 900);
+		return () => window.clearTimeout(timer);
+	}, [
+		asset?.uniqueColumn,
+		collectEdits,
+		id,
+		pendingEdits,
+		validateUniqueColumn,
+	]);
 
 	const flushPendingEditsIfAny = async () => {
 		const edits = collectEdits();
@@ -617,7 +687,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const cloneRowOptions = allRowsData?.rows || rows;
 
 	const goToAssetSourceList = () => {
-		if (accountId) clearEditDraft("as", accountId);
+		if (accountId) {
+			clearEditDraft("as", accountId, { entityId: id });
+		}
 		dispatch(
 			api.util.invalidateTags([
 				"AssetUploads",
@@ -696,8 +768,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				try {
 					tableRef.current?.flushActiveEdit?.();
 					const selected = getSelectedRowIds().map(String);
+					const operationRows = await getOperationRows();
 					const patches = fillSequenceLocal(
-						rows,
+						operationRows,
 						columnName,
 						selected.length ? selected : undefined
 					);
@@ -821,8 +894,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const patches = copyFromColumnLocal(
-				rows,
+				operationRows,
 				targetColumn,
 				sourceColumn,
 				template,
@@ -851,8 +925,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const patches = generateTextLocal(
-				rows,
+				operationRows,
 				targetColumn,
 				template,
 				selected.length ? selected : undefined
@@ -920,8 +995,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			}
 
 			if (alsoUpdate && targetColumn && template) {
+				const operationRows = await getOperationRows();
 				const targets = selectTargetRows(
-					rows,
+					operationRows,
 					selected.length ? selected : undefined
 				);
 				const applyResult = await applyColumnImages({
@@ -933,7 +1009,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					dryRun: true,
 					rowSnapshots: targets.map((row) => ({
 						_id: row._id,
-						rowData: row.rowData,
+						rowData: rowValues(row),
 					})),
 				}).unwrap();
 				const patches = (applyResult?.updates || []).map((u) => ({
@@ -975,8 +1051,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			const operationRows = await getOperationRows();
 			const targets = selectTargetRows(
-				rows,
+				operationRows,
 				selected.length ? selected : undefined
 			);
 			const result = await applyColumnImages({
@@ -988,7 +1065,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				dryRun: true,
 				rowSnapshots: targets.map((row) => ({
 					_id: row._id,
-					rowData: row.rowData,
+					rowData: rowValues(row),
 				})),
 			}).unwrap();
 			const patches = (result?.updates || []).map((u) => ({
@@ -1028,8 +1105,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				scope === "selected" ||
 				(scope === "all" && selected.length > 0);
 
+			const operationRows = await getOperationRows();
 			const patches = fillDateLocal(
-				rows,
+				operationRows,
 				column,
 				dateValue,
 				limitToSelected ? selected : undefined
@@ -1149,14 +1227,15 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			const limitToSelected =
 				mode === "replace" ||
 				(mode === "replaceAll" && selected.length > 0);
+			const operationRows = await getOperationRows();
 			const targets = selectTargetRows(
-				rows,
+				operationRows,
 				limitToSelected ? selected : undefined
 			);
 
 			const matchedRows = [];
 			targets.forEach((row, offset) => {
-				const current = cellText(row.rowData?.[column]);
+				const current = cellText(rowValues(row)[column]);
 				const isMatch = query === "" ? current === "" : current.includes(query);
 				if (isMatch) {
 					matchedRows.push({
@@ -1339,9 +1418,11 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					} catch {
 						// ignore delete failures on unused draft
 					}
-					const stored = accountId ? readEditDraft("as", accountId) : null;
+					const stored = accountId
+						? readEditDraft("as", accountId, { entityId: id })
+						: null;
 					if (stored && String(stored._id) === String(id)) {
-						clearEditDraft("as", accountId);
+						clearEditDraft("as", accountId, { entityId: id });
 					}
 				}
 				// Keep existing edit-draft so Edit can still ask Load / Discard.

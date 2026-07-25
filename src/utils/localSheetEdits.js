@@ -2,10 +2,21 @@
  * Client-side sheet edits that stay in pendingEdits until Save.
  */
 
+/** Support both API-flat rows and legacy `{ rowData }` rows. */
+export function rowValues(row) {
+	if (row?.rowData && typeof row.rowData === "object") {
+		return row.rowData;
+	}
+	return row && typeof row === "object" ? row : {};
+}
+
 export function mergePendingIntoRows(serverRows = [], pendingEdits = {}) {
 	return (serverRows || []).map((row) => {
 		const edit = pendingEdits[row._id];
 		if (!edit) return row;
+		if (!row?.rowData || typeof row.rowData !== "object") {
+			return { ...row, ...edit };
+		}
 		return {
 			...row,
 			rowData: {
@@ -91,7 +102,7 @@ export function generateTextLocal(rows, targetColumn, template, rowIds) {
 	return targets.map((row, index) => ({
 		rowId: String(row._id),
 		rowData: {
-			[targetColumn]: expandTemplate(template, row.rowData, index + 1),
+			[targetColumn]: expandTemplate(template, rowValues(row), index + 1),
 		},
 	}));
 }
@@ -111,9 +122,10 @@ export function copyFromColumnLocal(
 	const targets = selectTargetRows(rows, rowIds);
 	const custom = cellText(template);
 	return targets.map((row, index) => {
+		const values = rowValues(row);
 		let value = custom
-			? expandTemplate(custom, row.rowData, index + 1)
-			: cellText(row.rowData?.[sourceColumn]);
+			? expandTemplate(custom, values, index + 1)
+			: cellText(values[sourceColumn]);
 		if (splitBy) {
 			const parts = String(value).split(String(splitBy));
 			value = cellText(parts[0] ?? "");
@@ -131,7 +143,7 @@ export function replaceInColumnLocal(rows, column, findText, replaceText, rowIds
 	const targets = selectTargetRows(rows, rowIds);
 	const patches = [];
 	for (const row of targets) {
-		const current = cellText(row.rowData?.[column]);
+		const current = cellText(rowValues(row)[column]);
 		const matches =
 			find === "" ? current === "" : current.includes(find);
 		if (!matches) continue;
