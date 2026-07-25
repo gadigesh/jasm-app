@@ -73,7 +73,7 @@ const ListTable = ({
 				onScroll={handleScroll}
 				className="max-h-[calc(100vh-290px)] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200"
 			>
-				<table className="w-full border-separate border-spacing-y-2 text-sm text-[#64748B]">
+				<table className="w-full border-separate border-spacing-y-4 text-sm text-[#64748B]">
 					<thead
 						className={`sticky top-0 z-20 transition-shadow duration-200 ${
 							scrolled ? "shadow-md" : ""

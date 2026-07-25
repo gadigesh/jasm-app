@@ -23,6 +23,15 @@ const accountsApi = api.injectEndpoints({
 			}),
 			invalidatesTags: ["User"], // 🔥 refetch /me
 		}),
+		// Cached per account; UI polls every hour and uploads invalidate
+		getMindshareFolders: builder.query({
+			query: (accountId) => `/accounts/${accountId}/mindshare/folders`,
+			transformResponse: (response) => response.data,
+			keepUnusedDataFor: 3600,
+			providesTags: (_r, _e, accountId) => [
+				{ type: "MindshareFolders", id: accountId },
+			],
+		}),
 	}),
 });
 
@@ -30,4 +39,5 @@ export const {
 	useCreateAccountMutation,
 	useGetAccountsQuery,
 	useSwitchAccountMutation,
+	useGetMindshareFoldersQuery,
 } = accountsApi;

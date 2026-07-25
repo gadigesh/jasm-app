@@ -21,13 +21,16 @@ import {
 	useCloneCopyMatrixMutation,
 } from "../../store/services/copyMatrix";
 import AddCopyMatrixUploadModal from "../../components/modals/AddCopyMatrixUploadModal";
-import EditCopyMatrixModal from "../../components/modals/EditCopyMatrixModal";
 import CloneNameModal from "../../components/modals/CloneNameModal";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { resolveCopyMatrixEditPath } from "../../utils/copyMatrixHelpers";
+import {
+	readEditDraft,
+	clearEditDraft,
+} from "../../utils/editDraftStorage";
 import IconTooltip from "../../components/common/IconTooltip";
 
 function getSyncedAsNames(row) {
@@ -68,9 +71,10 @@ const CopyMatrixList = () => {
 	const [sortBy, setSortBy] = useState("recent");
 	const [filterStatus, setFilterStatus] = useState("all");
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-	const [editTarget, setEditTarget] = useState(null);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [cloneTarget, setCloneTarget] = useState(null);
+	const [draftPrompt, setDraftPrompt] = useState(null);
+	const [isResolvingDraft, setIsResolvingDraft] = useState(false);
 
 	const { data: meData } = useGetMeQuery();
 	const activeAccountId = meData?.activeAccount?._id
@@ -83,9 +87,7 @@ const CopyMatrixList = () => {
 		isFetching,
 	} = useGetCopyMatricesQuery(activeAccountId, {
 		skip: !activeAccountId,
-		refetchOnMountOrArgChange: activeAccountId,
-		refetchOnFocus: false,
-		refetchOnReconnect: false,
+		refetchOnMountOrArgChange: true,
 	});
 
 	const [deleteCopyMatrix, { isLoading: isDeleting }] =
@@ -128,6 +130,29 @@ const CopyMatrixList = () => {
 		return result;
 	}, [matrices, sortBy, filterStatus]);
 
+	const openDraft = (draft) => {
+		if (!draft?._id) return;
+		navigate(`/copy-matrix/${draft._id}/preview`);
+	};
+
+	const openAddFlow = () => setIsUploadModalOpen(true);
+
+	const openEditFlow = (row, { skipEditDraft = false } = {}) => {
+		const path = resolveCopyMatrixEditPath(row);
+		if (path) navigate(path, { state: skipEditDraft ? { skipEditDraft: true } : undefined });
+	};
+
+	const getStoredDraft = () => readEditDraft("cm", activeAccountId);
+
+	const handleAddClick = () => {
+		const draft = getStoredDraft();
+		if (draft?._id) {
+			setDraftPrompt({ mode: "add", draft });
+			return;
+		}
+		openAddFlow();
+	};
+
 	const handleExport = () => {
 		if (!filteredAndSortedData.length) {
 			showError("No data to export");
@@ -161,8 +186,45 @@ const CopyMatrixList = () => {
 	};
 
 	const goToEdit = (row) => {
-		const path = resolveCopyMatrixEditPath(row);
-		if (path) navigate(path);
+		const draft = getStoredDraft();
+		if (draft?._id) {
+			setDraftPrompt({ mode: "edit", draft, row });
+			return;
+		}
+		openEditFlow(row);
+	};
+
+	const confirmLoadDraft = () => {
+		const draft = draftPrompt?.draft;
+		setDraftPrompt(null);
+		openDraft(draft);
+	};
+
+	const confirmDraftSecondary = async () => {
+		if (!draftPrompt) return;
+		setIsResolvingDraft(true);
+		try {
+			if (draftPrompt.mode === "add") {
+				const draft = draftPrompt.draft;
+				if (draft?.isCreateDraft && draft?._id) {
+					await deleteCopyMatrix(draft._id).unwrap();
+				}
+				clearEditDraft("cm", activeAccountId);
+				setDraftPrompt(null);
+				openAddFlow();
+				return;
+			}
+			// Discard & edit: open original for this session, but keep draft until Save.
+			const row = draftPrompt.row;
+			setDraftPrompt(null);
+			openEditFlow(row, { skipEditDraft: true });
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to discard draft")
+			);
+		} finally {
+			setIsResolvingDraft(false);
+		}
 	};
 
 	const suggestCloneName = (name) => {
@@ -319,7 +381,7 @@ const CopyMatrixList = () => {
 						key="AddButton"
 						label="Add Matrix"
 						tooltip="Upload new copy matrix"
-						onClick={() => setIsUploadModalOpen(true)}
+						onClick={handleAddClick}
 					/>,
 				]}
 			/>
@@ -331,7 +393,7 @@ const CopyMatrixList = () => {
 					loading={
 						isLoading && !isFetching && matrices.length === 0
 					}
-					onEdit={(row) => setEditTarget(row)}
+					onEdit={goToEdit}
 					onView={goToView}
 					onDownload={handleDownload}
 					onDelete={(row) => setDeleteTarget(row)}
@@ -362,16 +424,6 @@ const CopyMatrixList = () => {
 				accountId={activeAccountId}
 			/>
 
-			<EditCopyMatrixModal
-				isOpen={!!editTarget}
-				matrix={editTarget}
-				accountId={activeAccountId}
-				onClose={() => setEditTarget(null)}
-				onEditSheet={(row) => {
-					goToEdit(row);
-				}}
-			/>
-
 			<CloneNameModal
 				isOpen={!!cloneTarget}
 				onClose={() => setCloneTarget(null)}
@@ -394,6 +446,27 @@ const CopyMatrixList = () => {
 				title="Delete copy matrix?"
 				message={`Are you sure you want to delete "${deleteTarget?.name}"? This will permanently remove the matrix and all its data.`}
 				confirmLabel="Delete"
+			/>
+
+			<ConfirmDialog
+				isOpen={!!draftPrompt}
+				onClose={() => setDraftPrompt(null)}
+				onConfirm={confirmLoadDraft}
+				onCancel={confirmDraftSecondary}
+				isLoading={isResolvingDraft}
+				variant="primary"
+				title="Load saved draft?"
+				message={
+					draftPrompt?.mode === "add"
+						? `You have a saved draft "${draftPrompt?.draft?.name || "Untitled"}". Load it, or discard it and start a new upload?`
+						: `You have a saved draft "${draftPrompt?.draft?.name || "Untitled"}". Load the draft, or discard it and edit "${draftPrompt?.row?.name || "this item"}"?`
+				}
+				confirmLabel="Load draft"
+				cancelLabel={
+					draftPrompt?.mode === "add"
+						? "Discard & start new"
+						: "Discard & edit"
+				}
 			/>
 		</div>
 	);

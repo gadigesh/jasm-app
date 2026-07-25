@@ -26,6 +26,10 @@ import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+	readEditDraft,
+	clearEditDraft,
+} from "../../utils/editDraftStorage";
 import IconTooltip from "../../components/common/IconTooltip";
 import {
 	buildMappedCopyMatrixByUploadId,
@@ -85,6 +89,8 @@ const AssetSourceList = () => {
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [cloneTarget, setCloneTarget] = useState(null);
+	const [draftPrompt, setDraftPrompt] = useState(null);
+	const [isResolvingDraft, setIsResolvingDraft] = useState(false);
 	const { data: meData } = useGetMeQuery();
 	const activeAccountId = meData?.activeAccount?._id;
 
@@ -95,6 +101,7 @@ const AssetSourceList = () => {
 		isFetching,
 	} = useGetAssetUploadsQuery(activeAccountId, {
 		skip: !activeAccountId,
+		refetchOnMountOrArgChange: true,
 	});
 
 	const { data: copyMatrices = [] } = useGetCopyMatricesQuery(activeAccountId, {
@@ -113,6 +120,72 @@ const AssetSourceList = () => {
 		useDeleteAssetSourceMutation();
 	const [cloneAssetSource, { isLoading: isCloning }] =
 		useCloneAssetSourceMutation();
+
+	const openDraft = (draft) => {
+		if (!draft?._id) return;
+		navigate(`/asset-sources/${draft._id}/preview`);
+	};
+
+	const openAddFlow = () => setIsUploadModalOpen(true);
+
+	const openEditFlow = (row, { skipEditDraft = false } = {}) => {
+		navigate(`/asset-sources/${row._id}/preview`, {
+			state: skipEditDraft ? { skipEditDraft: true } : undefined,
+		});
+	};
+
+	const getStoredDraft = () => readEditDraft("as", activeAccountId);
+
+	const handleAddClick = () => {
+		const draft = getStoredDraft();
+		if (draft?._id) {
+			setDraftPrompt({ mode: "add", draft });
+			return;
+		}
+		openAddFlow();
+	};
+
+	const handleEditClick = (row) => {
+		const draft = getStoredDraft();
+		if (draft?._id) {
+			setDraftPrompt({ mode: "edit", draft, row });
+			return;
+		}
+		openEditFlow(row);
+	};
+
+	const confirmLoadDraft = () => {
+		const draft = draftPrompt?.draft;
+		setDraftPrompt(null);
+		openDraft(draft);
+	};
+
+	const confirmDraftSecondary = async () => {
+		if (!draftPrompt) return;
+		setIsResolvingDraft(true);
+		try {
+			if (draftPrompt.mode === "add") {
+				const draft = draftPrompt.draft;
+				if (draft?.isCreateDraft && draft?._id) {
+					await deleteAssetSource(draft._id).unwrap();
+				}
+				clearEditDraft("as", activeAccountId);
+				setDraftPrompt(null);
+				openAddFlow();
+				return;
+			}
+			// Discard & edit: open original for this session, but keep draft until Save.
+			const row = draftPrompt.row;
+			setDraftPrompt(null);
+			openEditFlow(row, { skipEditDraft: true });
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to discard draft")
+			);
+		} finally {
+			setIsResolvingDraft(false);
+		}
+	};
 
 	const suggestCloneName = (name) => {
 		const base = String(name || "Untitled").trim();
@@ -387,7 +460,7 @@ const AssetSourceList = () => {
 						key="AddButton"
 						label="Add New"
 						tooltip="Create asset source from copy matrix"
-						onClick={() => setIsUploadModalOpen(true)}
+						onClick={handleAddClick}
 					/>,
 				]}
 			/>
@@ -397,9 +470,7 @@ const AssetSourceList = () => {
 					columns={columns}
 					rows={filteredAndSortedData}
 					loading={isLoading && !isFetching && uploads.length === 0}
-					onEdit={(row) =>
-						navigate(`/asset-sources/${row._id}/preview`)
-					}
+					onEdit={handleEditClick}
 					onView={(row) =>
 						navigate(
 							`/asset-sources/${row._id}/preview?mode=view`
@@ -467,6 +538,27 @@ const AssetSourceList = () => {
 				title="Delete asset source?"
 				message={`Are you sure you want to delete "${deleteTarget?.name}"? This will permanently remove the asset source and all its data.`}
 				confirmLabel="Delete"
+			/>
+
+			<ConfirmDialog
+				isOpen={!!draftPrompt}
+				onClose={() => setDraftPrompt(null)}
+				onConfirm={confirmLoadDraft}
+				onCancel={confirmDraftSecondary}
+				isLoading={isResolvingDraft}
+				variant="primary"
+				title="Load saved draft?"
+				message={
+					draftPrompt?.mode === "add"
+						? `You have a saved draft "${draftPrompt?.draft?.name || "Untitled"}". Load it, or discard it and start a new asset source?`
+						: `You have a saved draft "${draftPrompt?.draft?.name || "Untitled"}". Load the draft, or discard it and edit "${draftPrompt?.row?.name || "this item"}"?`
+				}
+				confirmLabel="Load draft"
+				cancelLabel={
+					draftPrompt?.mode === "add"
+						? "Discard & start new"
+						: "Discard & edit"
+				}
 			/>
 		</div>
 	);
