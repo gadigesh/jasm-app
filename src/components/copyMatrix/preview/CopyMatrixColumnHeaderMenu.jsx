@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-	Hash,
 	Columns3,
 	Type,
 	Calendar,
@@ -9,6 +8,7 @@ import {
 	Replace,
 	Pencil,
 	Trash2,
+	ImagePlus,
 } from "lucide-react";
 
 const MENU_SECTIONS = [
@@ -17,24 +17,24 @@ const MENU_SECTIONS = [
 		title: "Fill the column",
 		items: [
 			{
-				key: "sequence-number",
-				label: "Sequence number",
-				icon: Hash,
-			},
-			{
 				key: "from-other-column",
 				label: "Extract from column",
 				icon: Columns3,
 			},
 			{
 				key: "generate-text",
-				label: "Generate Text/Reporting",
+				label: "Generate Text/Number/Reporting",
 				icon: Type,
 			},
 			{
 				key: "select-date",
 				label: "Select Date",
 				icon: Calendar,
+			},
+			{
+				key: "update-images",
+				label: "Update images",
+				icon: ImagePlus,
 			},
 		],
 	},
@@ -175,7 +175,7 @@ const CopyMatrixColumnHeaderMenu = ({
 								disabled={disabled}
 								title={
 									disabled
-										? "Only available when not synced with an asset source"
+										? "This column is synced with an asset source"
 										: undefined
 								}
 								onClick={() => {

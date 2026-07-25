@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { useDispatch, useStore } from "react-redux";
 import {
 	BackButton,
@@ -16,6 +16,7 @@ import {
 	useGetCopyMatrixRowsQuery,
 	useDeleteCopyMatrixMutation,
 	useAddCopyMatrixRowMutation,
+	useDeleteCopyMatrixRowMutation,
 	useAddCopyMatrixColumnMutation,
 	useCloneCopyMatrixRowMutation,
 	useCloneCopyMatrixColumnMutation,
@@ -24,6 +25,9 @@ import {
 	useFillCopyMatrixColumnSequenceMutation,
 	useCopyCopyMatrixColumnFromMutation,
 	useGenerateCopyMatrixColumnTextMutation,
+	useUploadCopyMatrixColumnImagesMutation,
+	useSetCopyMatrixColumnCdnUrlMutation,
+	useApplyCopyMatrixColumnImagesMutation,
 	useFillCopyMatrixColumnDateMutation,
 	useReplaceCopyMatrixColumnMutation,
 	useApplyCopyMatrixColumnChangesMutation,
@@ -36,12 +40,15 @@ import UniqueColumnSelector from "../../components/copyMatrix/preview/UniqueColu
 import AddCopyMatrixColumnModal from "../../components/modals/copyMatrix/AddCopyMatrixColumnModal";
 import CloneCopyMatrixRowModal from "../../components/modals/copyMatrix/CloneCopyMatrixRowModal";
 import CloneCopyMatrixColumnModal from "../../components/modals/copyMatrix/CloneCopyMatrixColumnModal";
+import EditSheetRowModal from "../../components/modals/copyMatrix/EditSheetRowModal";
 import CopyMatrixFromColumnModal from "../../components/modals/copyMatrix/CopyMatrixFromColumnModal";
 import CopyMatrixGenerateTextModal from "../../components/modals/copyMatrix/CopyMatrixGenerateTextModal";
+import CopyMatrixUpdateImagesModal from "../../components/modals/copyMatrix/CopyMatrixUpdateImagesModal";
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
+import { useGetMindshareFoldersQuery } from "../../store/services/accounts";
 import api from "../../store/services/api";
 import { showSuccess, showError, showWarning } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
@@ -50,11 +57,25 @@ import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
 import { isCopyMatrixRecreateMode, isCopyMatrixSynced } from "../../utils/copyMatrixHelpers";
 import { suggestCloneColumnName } from "../../utils/copyMatrixColumnHelpers";
 import { normalizeCellText } from "../../utils/normalizeCellText";
+import { writeEditDraft, clearEditDraft, readEditDraft, capturePendingEditsMap } from "../../utils/editDraftStorage";
+import {
+	applyRowPatches,
+	fillSequenceLocal,
+	fillDateLocal,
+	fillColumnValueLocal,
+	generateTextLocal,
+	copyFromColumnLocal,
+	replaceInColumnLocal,
+	cellText,
+	selectTargetRows,
+} from "../../utils/localSheetEdits";
 
 const CopyMatrixPreview = () => {
 	const { id } = useParams();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const [searchParams] = useSearchParams();
+	const skipEditDraft = Boolean(location.state?.skipEditDraft);
 	const readOnly = searchParams.get("mode") === "view";
 	const creatingNewAssetSource =
 		searchParams.get("intent") === "create-as";
@@ -65,6 +86,8 @@ const CopyMatrixPreview = () => {
 	const [name, setName] = useState("");
 	const [uniqueColumn, setUniqueColumn] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
+	const hasSavedChangesRef = useRef(false);
+	const pendingEditsRef = useRef({});
 	const [isSavingOp, setIsSavingOp] = useState(false);
 	const [saveProgress, setSaveProgress] = useState(0);
 	const [savePhase, setSavePhase] = useState("saving");
@@ -73,8 +96,13 @@ const CopyMatrixPreview = () => {
 		isChecking: false,
 	});
 	const [sheetModal, setSheetModal] = useState(null);
+	const [editingRow, setEditingRow] = useState(null);
+	const [deletingRow, setDeletingRow] = useState(null);
 	const [columnModal, setColumnModal] = useState(null);
 	const [renamingColumn, setRenamingColumn] = useState(null);
+	const [localUnsyncedColumns, setLocalUnsyncedColumns] = useState(
+		() => new Set()
+	);
 	const [selectedRowIds, setSelectedRowIds] = useState([]);
 	const [replaceStatusMessage, setReplaceStatusMessage] = useState(null);
 	const [replacePanel, setReplacePanel] = useState(null);
@@ -92,9 +120,9 @@ const CopyMatrixPreview = () => {
 	const duplicateHighlightTimeoutRef = useRef(null);
 	const tableRef = useRef(null);
 
-	const collectEdits = () => {
+	const collectEdits = useCallback(() => {
 		const flushed = tableRef.current?.flushActiveEdit?.();
-		const merged = { ...pendingEdits };
+		const merged = { ...pendingEditsRef.current };
 		if (flushed?.rowId) {
 			merged[flushed.rowId] = {
 				...merged[flushed.rowId],
@@ -107,7 +135,7 @@ const CopyMatrixPreview = () => {
 			delete rowData.rowIndex;
 			return { _id: rowId, rowData };
 		});
-	};
+	}, []);
 
 	const invalidateAfterSave = (assetUploadId) => {
 		dispatch(
@@ -146,7 +174,16 @@ const CopyMatrixPreview = () => {
 	);
 
 	const { data: meData } = useGetMeQuery();
-	const accountId = matrix?.accountId || meData?.activeAccount?._id;
+	const accountId = String(
+		matrix?.accountId?._id || matrix?.accountId || meData?.activeAccount?._id || ""
+	);
+	const {
+		data: imageFoldersData,
+		isFetching: isLoadingImageFolders,
+	} = useGetMindshareFoldersQuery(accountId, {
+		skip: !accountId,
+		pollingInterval: 60 * 60 * 1000,
+	});
 
 	const [deleteCopyMatrix] = useDeleteCopyMatrixMutation();
 	const [addCopyMatrixRow, { isLoading: isAddingRow }] =
@@ -155,6 +192,8 @@ const CopyMatrixPreview = () => {
 		useAddCopyMatrixColumnMutation();
 	const [cloneCopyMatrixRow, { isLoading: isCloningRow }] =
 		useCloneCopyMatrixRowMutation();
+	const [deleteCopyMatrixRow, { isLoading: isDeletingRow }] =
+		useDeleteCopyMatrixRowMutation();
 	const [cloneCopyMatrixColumn, { isLoading: isCloningColumn }] =
 		useCloneCopyMatrixColumnMutation();
 	const [updateCopyMatrixRows] = useUpdateCopyMatrixRowsMutation();
@@ -166,6 +205,12 @@ const CopyMatrixPreview = () => {
 		useCopyCopyMatrixColumnFromMutation();
 	const [generateColumnText, { isLoading: isGeneratingText }] =
 		useGenerateCopyMatrixColumnTextMutation();
+	const [uploadColumnImages, { isLoading: isUploadingImages }] =
+		useUploadCopyMatrixColumnImagesMutation();
+	const [setColumnCdnUrl, { isLoading: isSettingCdnUrl }] =
+		useSetCopyMatrixColumnCdnUrlMutation();
+	const [applyColumnImages, { isLoading: isApplyingImages }] =
+		useApplyCopyMatrixColumnImagesMutation();
 	const [fillColumnDate, { isLoading: isFillingDate }] =
 		useFillCopyMatrixColumnDateMutation();
 	const [replaceColumn, { isLoading: isReplacingColumn }] =
@@ -208,6 +253,17 @@ const CopyMatrixPreview = () => {
 		!isMatrixLoading && !isMatrixFetching && Boolean(matrix);
 	const isDraft = matrix?.status === "draft";
 	const isSynced = matrixReady && isCopyMatrixSynced(matrix);
+	const syncedColumnNames = useMemo(
+		() => new Set(matrix?.syncedColumns || []),
+		[matrix?.syncedColumns]
+	);
+	const canModifyColumnStructure = useCallback(
+		(column) =>
+			localUnsyncedColumns.has(column) ||
+			!isSynced ||
+			!syncedColumnNames.has(column),
+		[isSynced, syncedColumnNames, localUnsyncedColumns]
+	);
 	const canEditMatrixName =
 		matrixReady && !readOnly && !isSynced && !creatingNewAssetSource;
 	const isUnsyncedFinalized =
@@ -235,11 +291,7 @@ const CopyMatrixPreview = () => {
 		!isUnsyncedFinalized ||
 		((!canEditMatrixName || displayName.trim().length > 0) &&
 			!hasNameConflict);
-	const primaryLabel = isSavingOp
-		? "Saving..."
-		: isDraft || hasLinkedAssetSource || isUnsyncedFinalized
-		? "Save"
-		: "Finish";
+	const primaryLabel = isSavingOp ? "Saving..." : "Save";
 
 	useEffect(() => {
 		if ((isDraft || canEditMatrixName) && matrix?.name && !name) {
@@ -282,11 +334,63 @@ const CopyMatrixPreview = () => {
 	]);
 
 	const handleCellChange = useCallback((rowId, rowData) => {
-		setPendingEdits((prev) => ({
-			...prev,
-			[rowId]: { ...prev[rowId], ...rowData },
-		}));
+		const next = {
+			...pendingEditsRef.current,
+			[rowId]: {
+				...pendingEditsRef.current[rowId],
+				...rowData,
+			},
+		};
+		pendingEditsRef.current = next;
+		setPendingEdits(next);
 	}, []);
+
+	const commitLocalPatches = useCallback((patches) => {
+		if (!patches?.length) return 0;
+		const next = applyRowPatches(pendingEditsRef.current, patches);
+		pendingEditsRef.current = next;
+		setPendingEdits(next);
+		return patches.length;
+	}, []);
+
+	useEffect(() => {
+		pendingEditsRef.current = pendingEdits;
+	}, [pendingEdits]);
+
+	// Resume locally saved cell edits (create draft or completed).
+	useEffect(() => {
+		if (!accountId || !id || skipEditDraft) return;
+		const draft = readEditDraft("cm", accountId);
+		if (!draft || String(draft._id) !== String(id)) return;
+		const pending = draft.pendingEdits || {};
+		if (Object.keys(pending).length === 0) return;
+		pendingEditsRef.current = pending;
+		setPendingEdits(pending);
+	}, [accountId, id, skipEditDraft]);
+
+	// Keep a local draft snapshot as the user edits (until Save clears it).
+	useEffect(() => {
+		if (!accountId || !id || readOnly) return;
+		const hasPending = Object.keys(pendingEdits).length > 0;
+		if (!hasPending && !hasSavedChangesRef.current) return;
+		const timer = window.setTimeout(() => {
+			writeEditDraft("cm", accountId, {
+				_id: id,
+				name: displayName.trim() || matrix?.name || "Untitled",
+				isCreateDraft: Boolean(isDraft),
+				pendingEdits: pendingEditsRef.current || {},
+			});
+		}, 400);
+		return () => window.clearTimeout(timer);
+	}, [
+		accountId,
+		id,
+		readOnly,
+		pendingEdits,
+		displayName,
+		matrix?.name,
+		isDraft,
+	]);
 
 	const closeSheetModal = () => setSheetModal(null);
 
@@ -315,7 +419,7 @@ const CopyMatrixPreview = () => {
 		if (edits.length === 0) return;
 		await updateCopyMatrixRows({ id, rows: edits }).unwrap();
 		setPendingEdits({});
-	}, [id, updateCopyMatrixRows, pendingEdits]);
+	}, [id, updateCopyMatrixRows, collectEdits]);
 
 	const applyUniqueAnalysis = useCallback(
 		(analysis, column) => {
@@ -355,16 +459,6 @@ const CopyMatrixPreview = () => {
 	const runUniqueColumnCheck = useCallback(
 		async (column, { flushEdits = true } = {}) => {
 			if (!id || !column) return null;
-			if (flushEdits) {
-				try {
-					await flushPendingEditsIfAny();
-				} catch (error) {
-					showError(
-						getApiErrorMessage(error, "Failed to save edits before unique check")
-					);
-					return null;
-				}
-			}
 			if (column === AUTO_ROW_ID_COLUMN) {
 				const analysis = {
 					unique: true,
@@ -381,6 +475,7 @@ const CopyMatrixPreview = () => {
 				const analysis = await checkUniqueColumn({
 					id,
 					column,
+					rows: flushEdits ? collectEdits() : [],
 				}).unwrap();
 				applyUniqueAnalysis(analysis, column);
 				return analysis;
@@ -391,7 +486,7 @@ const CopyMatrixPreview = () => {
 				return null;
 			}
 		},
-		[id, checkUniqueColumn, applyUniqueAnalysis, flushPendingEditsIfAny]
+		[id, checkUniqueColumn, applyUniqueAnalysis, collectEdits]
 	);
 
 	const handleUniqueColumnChange = async (column) => {
@@ -401,14 +496,12 @@ const CopyMatrixPreview = () => {
 	};
 
 	/**
-	 * Before finish/create AS: re-check uniqueness.
-	 * Only fall back to Row ID when there are duplicate non-empty values.
-	 * Empty cells are allowed (row-index keys are used for those rows).
+	 * Before saving, require every selected unique-column value to be
+	 * non-empty and distinct.
 	 */
 	const resolveUniqueColumnForSave = async () => {
 		const requested = uniqueColumn || AUTO_ROW_ID_COLUMN;
 		if (requested === AUTO_ROW_ID_COLUMN) {
-			await flushPendingEditsIfAny();
 			return AUTO_ROW_ID_COLUMN;
 		}
 
@@ -423,13 +516,12 @@ const CopyMatrixPreview = () => {
 			return requested;
 		}
 
-		// True duplicates — do not silently switch to Row ID
-		if (analysis && (analysis.duplicates || []).length > 0) {
+		if (analysis && !analysis.unique) {
 			const err = new Error(
 				analysis.message ||
-					`"${requested}" has duplicate values. Fix them or pick another unique column.`
+					`"${requested}" must contain non-empty, distinct values.`
 			);
-			err.code = "UNIQUE_COLUMN_DUPLICATES";
+			err.code = "UNIQUE_COLUMN_INVALID";
 			throw err;
 		}
 
@@ -492,6 +584,7 @@ const CopyMatrixPreview = () => {
 				scheduleHighlightClear();
 			}
 			setPage(targetPage);
+			hasSavedChangesRef.current = true;
 			showSuccess("Row added");
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to add row"));
@@ -508,6 +601,7 @@ const CopyMatrixPreview = () => {
 				setHighlightedRowId(null);
 				scheduleHighlightClear();
 			}
+			hasSavedChangesRef.current = true;
 			showSuccess("Column added");
 			closeSheetModal();
 		} catch (error) {
@@ -517,11 +611,86 @@ const CopyMatrixPreview = () => {
 
 	const handleCloneRow = async (sourceRowId) => {
 		try {
-			await cloneCopyMatrixRow({ id, sourceRowId }).unwrap();
+			const result = await cloneCopyMatrixRow({
+				id,
+				sourceRowId,
+			}).unwrap();
+			const newRow = result?.data?.row || result?.row;
+			const newRowId = newRow?._id;
+			const newIndex = newRow?.rowIndex;
+			if (newRowId) {
+				setHighlightedRowId(String(newRowId));
+				setHighlightedColumn(null);
+				scheduleHighlightClear();
+			}
+			if (newIndex != null) {
+				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
+			}
 			showSuccess("Row cloned");
+			hasSavedChangesRef.current = true;
 			closeSheetModal();
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to clone row"));
+		}
+	};
+
+	const handleEditRow = (row) => setEditingRow(row);
+
+	const handleSaveRow = (rowData) => {
+		if (!editingRow?._id) return;
+		const changed = columns.some(
+			(column) =>
+				normalizeCellText(rowData[column]) !==
+				normalizeCellText(editingRow[column])
+		);
+		if (!changed) {
+			setEditingRow(null);
+			showWarning("No row changes to save");
+			return;
+		}
+		handleCellChange(editingRow._id, rowData);
+		setEditingRow(null);
+		showSuccess("Row changes ready to save");
+	};
+
+	const handleDeleteRow = (row) => setDeletingRow(row);
+
+	const handleDeleteRowConfirm = async () => {
+		if (!deletingRow?._id) return;
+		try {
+			await deleteCopyMatrixRow({
+				id,
+				rowId: deletingRow._id,
+			}).unwrap();
+			setDeletingRow(null);
+			hasSavedChangesRef.current = true;
+			showSuccess("Row deleted");
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to delete row"));
+		}
+	};
+
+	const handleCopyRow = async (row) => {
+		try {
+			const result = await cloneCopyMatrixRow({
+				id,
+				sourceRowId: row._id,
+			}).unwrap();
+			const newRow = result?.data?.row || result?.row;
+			const newRowId = newRow?._id;
+			const newIndex = newRow?.rowIndex ?? Number(row.rowIndex) + 1;
+			if (newRowId) {
+				setHighlightedRowId(String(newRowId));
+				setHighlightedColumn(null);
+				scheduleHighlightClear();
+			}
+			if (newIndex != null) {
+				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
+			}
+			showSuccess("Row copied");
+			hasSavedChangesRef.current = true;
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to copy row"));
 		}
 	};
 
@@ -532,6 +701,12 @@ const CopyMatrixPreview = () => {
 				sourceColumn,
 				newColumnName,
 			}).unwrap();
+			setLocalUnsyncedColumns((current) => {
+				const next = new Set(current);
+				next.add(newColumnName.trim());
+				return next;
+			});
+			hasSavedChangesRef.current = true;
 			showSuccess("Column cloned");
 			closeSheetModal();
 		} catch (error) {
@@ -560,21 +735,22 @@ const CopyMatrixPreview = () => {
 		switch (action) {
 			case "sequence-number": {
 				try {
-					await flushPendingEditsIfAny();
+					tableRef.current?.flushActiveEdit?.();
 					const selected = getSelectedRowIds().map(String);
-					const result = await fillColumnSequence({
-						id,
-						column: columnName,
-						rowIds: selected.length ? selected : undefined,
-					}).unwrap();
+					const patches = fillSequenceLocal(
+						rows,
+						columnName,
+						selected.length ? selected : undefined
+					);
+					const updated = commitLocalPatches(patches);
 					setHighlightedColumn(columnName);
 					scheduleHighlightClear();
 					showSuccess(
 						selected.length
-							? `Sequence applied to ${result?.updated ?? 0} selected row${
-									(result?.updated ?? 0) === 1 ? "" : "s"
-							  }`
-							: `Sequence applied to ${result?.updated ?? 0} rows`
+							? `Sequence applied to ${updated} selected row${
+									updated === 1 ? "" : "s"
+							  } (draft)`
+							: `Sequence applied to ${updated} rows (draft)`
 					);
 					clearRowSelection();
 				} catch (error) {
@@ -594,6 +770,13 @@ const CopyMatrixPreview = () => {
 			case "generate-text":
 				setColumnModal({
 					type: "generate-text",
+					column: columnName,
+					anchorRect: anchorRect || null,
+				});
+				break;
+			case "update-images":
+				setColumnModal({
+					type: "update-images",
 					column: columnName,
 					anchorRect: anchorRect || null,
 				});
@@ -642,9 +825,9 @@ const CopyMatrixPreview = () => {
 				});
 				break;
 			case "rename-column":
-				if (isSynced) {
+				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
-						"Rename is only available when not synced with an asset source"
+						"This column cannot be renamed because it is synced with an asset source"
 					);
 					return;
 				}
@@ -652,9 +835,9 @@ const CopyMatrixPreview = () => {
 				setHighlightedColumn(columnName);
 				break;
 			case "delete-column":
-				if (isSynced) {
+				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
-						"Delete is only available when not synced with an asset source"
+						"This column cannot be deleted because it is synced with an asset source"
 					);
 					return;
 				}
@@ -673,24 +856,25 @@ const CopyMatrixPreview = () => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
-			const result = await copyColumnFrom({
-				id,
+			const patches = copyFromColumnLocal(
+				rows,
 				targetColumn,
 				sourceColumn,
 				template,
 				splitBy,
-				rowIds: selected.length ? selected : undefined,
-			}).unwrap();
+				selected.length ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Extracted to ${result?.updated ?? 0} selected row${
-							(result?.updated ?? 0) === 1 ? "" : "s"
-					  }`
-					: `Extracted to ${result?.updated ?? 0} rows`
+					? `Extracted to ${updated} selected row${
+							updated === 1 ? "" : "s"
+					  } (draft)`
+					: `Extracted to ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -702,22 +886,23 @@ const CopyMatrixPreview = () => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
-			const result = await generateColumnText({
-				id,
+			const patches = generateTextLocal(
+				rows,
 				targetColumn,
 				template,
-				rowIds: selected.length ? selected : undefined,
-			}).unwrap();
+				selected.length ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Text generated for ${result?.updated ?? 0} selected row${
-							(result?.updated ?? 0) === 1 ? "" : "s"
-					  }`
-					: `Text generated for ${result?.updated ?? 0} rows`
+					? `Text generated for ${updated} selected row${
+							updated === 1 ? "" : "s"
+					  } (draft)`
+					: `Text generated for ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -725,33 +910,174 @@ const CopyMatrixPreview = () => {
 		}
 	};
 
+	const handleUploadImages = async ({
+		files,
+		template,
+		folder,
+		alsoUpdate = false,
+	}) => {
+		const targetColumn = columnModal?.column;
+		try {
+			tableRef.current?.flushActiveEdit?.();
+			const selected = getSelectedRowIds().map(String);
+			const applyToSelection = selected.length > 0 && Boolean(targetColumn);
+
+			const result = await uploadColumnImages({
+				id,
+				files,
+				folder: folder || undefined,
+			}).unwrap();
+
+			const cdnUrl = String(result?.cdnUrl || "").trim();
+
+			if (applyToSelection) {
+				if (!cdnUrl) {
+					showError(
+						"Upload succeeded but no CDN URL was found for the image. Wait a moment and try Update URLs, or upload again."
+					);
+					return;
+				}
+				const patches = fillColumnValueLocal(
+					rows,
+					targetColumn,
+					cdnUrl,
+					selected
+				);
+				const updated = commitLocalPatches(patches);
+				setHighlightedColumn(targetColumn);
+				scheduleHighlightClear();
+				showSuccess(
+					`Uploaded image and set CDN URL on ${updated} selected row${
+						updated === 1 ? "" : "s"
+					} (draft)`
+				);
+				closeColumnModal();
+				clearRowSelection();
+				return;
+			}
+
+			if (alsoUpdate && targetColumn && template) {
+				const targets = selectTargetRows(
+					rows,
+					selected.length ? selected : undefined
+				);
+				const applyResult = await applyColumnImages({
+					id,
+					targetColumn,
+					template,
+					folder,
+					rowIds: selected.length ? selected : undefined,
+					dryRun: true,
+					rowSnapshots: targets.map((row) => ({
+						_id: row._id,
+						rowData: row.rowData,
+					})),
+				}).unwrap();
+				const patches = (applyResult?.updates || []).map((u) => ({
+					rowId: String(u.rowId),
+					rowData: { [targetColumn]: u.url },
+				}));
+				const updated = commitLocalPatches(patches);
+				setHighlightedColumn(targetColumn);
+				scheduleHighlightClear();
+				showSuccess(
+					`Uploaded ${result?.uploaded ?? files?.length ?? 0} file${
+						(result?.uploaded ?? files?.length ?? 0) === 1
+							? ""
+							: "s"
+					}; updated ${updated} CDN URL${
+						updated === 1 ? "" : "s"
+					} (draft)`
+				);
+				closeColumnModal();
+				clearRowSelection();
+				return;
+			}
+
+			showSuccess(
+				result?.uploaded != null
+					? `Uploaded ${result.uploaded} file${
+							result.uploaded === 1 ? "" : "s"
+					  } to asset library`
+					: "Images uploaded to asset library"
+			);
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to upload images"));
+		}
+	};
+
+	const handleApplyImages = async ({ template, folder }) => {
+		const targetColumn = columnModal?.column;
+		if (!targetColumn) return;
+		try {
+			tableRef.current?.flushActiveEdit?.();
+			const selected = getSelectedRowIds().map(String);
+			const targets = selectTargetRows(
+				rows,
+				selected.length ? selected : undefined
+			);
+			const result = await applyColumnImages({
+				id,
+				targetColumn,
+				template,
+				folder,
+				rowIds: selected.length ? selected : undefined,
+				dryRun: true,
+				rowSnapshots: targets.map((row) => ({
+					_id: row._id,
+					rowData: row.rowData,
+				})),
+			}).unwrap();
+			const patches = (result?.updates || []).map((u) => ({
+				rowId: String(u.rowId),
+				rowData: { [targetColumn]: u.url },
+			}));
+			const updated = commitLocalPatches(patches);
+			setHighlightedColumn(targetColumn);
+			scheduleHighlightClear();
+			showSuccess(
+				`Updated ${updated} row${
+					updated === 1 ? "" : "s"
+				} with image URLs (draft)${
+					result?.missing
+						? ` (${result.missing} without a match)`
+						: ""
+				}`
+			);
+			closeColumnModal();
+			clearRowSelection();
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to apply images"));
+		}
+	};
+
 	const handleFillDate = async ({ dateValue, scope }) => {
 		const column = columnModal?.column;
 		if (!column) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
 			if (scope === "selected" && selected.length === 0) {
 				showWarning("Select at least one row first");
 				return;
 			}
-			// If rows are selected, Apply all still only updates the selection
 			const limitToSelected =
 				scope === "selected" ||
 				(scope === "all" && selected.length > 0);
 
-			const result = await fillColumnDate({
-				id,
+			const patches = fillDateLocal(
+				rows,
 				column,
 				dateValue,
-				rowIds: limitToSelected ? selected : undefined,
-			}).unwrap();
+				limitToSelected ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(column);
 			scheduleHighlightClear();
 			showSuccess(
 				limitToSelected
-					? `Date applied to ${result?.updated ?? 0} selected rows`
-					: `Date applied to ${result?.updated ?? 0} rows`
+					? `Date applied to ${updated} selected rows (draft)`
+					: `Date applied to ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -844,20 +1170,16 @@ const CopyMatrixPreview = () => {
 	}) => {
 		const column = columnName || replacePanel?.column;
 		if (!column) return;
-		// Keep spaces in the query (including a single space).
-		// Empty query is allowed — it targets blank cells.
 		const query = String(find ?? "");
 
 		try {
-			// Find should see latest typed cells
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
 			if (mode === "replace" && selected.length === 0) {
 				setReplaceStatusMessage("Select at least one row first");
 				return;
 			}
 
-			// Cycle locally when Find is clicked again with the same query
 			if (
 				mode === "find" &&
 				findQuery === query &&
@@ -875,29 +1197,27 @@ const CopyMatrixPreview = () => {
 				return;
 			}
 
-			// If rows are selected, All applies only to that selection.
 			const limitToSelected =
 				mode === "replace" ||
 				(mode === "replaceAll" && selected.length > 0);
-
-			const result = await replaceColumn({
-				id,
-				column,
-				find: query,
-				replace: replace ?? "",
-				mode,
-				rowIds: limitToSelected ? selected : undefined,
-			}).unwrap();
-
-			const matchedRows = result?.matchedRows || [];
-			setReplaceStatusMessage(
-				result?.message ||
-					(mode === "find"
-						? `${result?.matched ?? 0} matching rows found`
-						: `Replaced ${result?.updated ?? 0} of ${
-								result?.matched ?? 0
-						  } matched rows`)
+			const targets = selectTargetRows(
+				rows,
+				limitToSelected ? selected : undefined
 			);
+
+			const matchedRows = [];
+			targets.forEach((row, offset) => {
+				const current = cellText(row.rowData?.[column]);
+				const isMatch = query === "" ? current === "" : current.includes(query);
+				if (isMatch) {
+					matchedRows.push({
+						rowId: String(row._id),
+						rowIndex: row.rowIndex,
+						offset,
+						before: current,
+					});
+				}
+			});
 
 			if (mode === "find") {
 				setFindQuery(query);
@@ -917,17 +1237,37 @@ const CopyMatrixPreview = () => {
 				return;
 			}
 
-			if (result?.changes?.length) {
+			const replacement = String(replace ?? "");
+			const patches = replaceInColumnLocal(
+				targets,
+				column,
+				query,
+				replacement,
+				undefined
+			);
+			const changes = patches.map((patch) => {
+				const before =
+					matchedRows.find((m) => m.rowId === patch.rowId)?.before ??
+					"";
+				return {
+					rowId: patch.rowId,
+					before,
+					after: patch.rowData[column],
+				};
+			});
+			commitLocalPatches(patches);
+
+			if (changes.length) {
 				setReplaceUndoStack((prev) => [
 					...prev,
-					{
-						column: result.column || column,
-						changes: result.changes,
-					},
+					{ column, changes },
 				]);
 				setReplaceRedoStack([]);
 			}
 
+			setReplaceStatusMessage(
+				`Replaced ${patches.length} of ${matchedRows.length} matched rows (draft)`
+			);
 			setFindQuery("");
 			setFindMatches([]);
 			setFindMatchIndex(0);
@@ -946,17 +1286,14 @@ const CopyMatrixPreview = () => {
 
 	const applyReplaceChanges = async (entry, direction) => {
 		if (!entry?.changes?.length || !entry.column) return;
-		const changes = entry.changes.map((change) => ({
+		const patches = entry.changes.map((change) => ({
 			rowId: change.rowId,
-			value: direction === "undo" ? change.before : change.after,
+			rowData: {
+				[entry.column]:
+					direction === "undo" ? change.before : change.after,
+			},
 		}));
-		await applyColumnChanges({
-			id,
-			column: entry.column,
-			changes,
-			page,
-			limit: rowsPerPage,
-		}).unwrap();
+		commitLocalPatches(patches);
 		setHighlightedColumn(entry.column);
 		scheduleHighlightClear();
 		setDuplicateHighlight({
@@ -1009,12 +1346,20 @@ const CopyMatrixPreview = () => {
 		try {
 			await flushPendingEditsIfAny();
 			await renameColumn({ id, oldName, newName }).unwrap();
+			setLocalUnsyncedColumns((current) => {
+				if (!current.has(oldName)) return current;
+				const next = new Set(current);
+				next.delete(oldName);
+				next.add(newName);
+				return next;
+			});
 			setRenamingColumn(null);
 			setHighlightedColumn(newName);
 			scheduleHighlightClear();
 			if (uniqueColumn === oldName) {
 				setUniqueColumn(newName);
 			}
+			hasSavedChangesRef.current = true;
 			showSuccess("Column renamed");
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to rename column"));
@@ -1033,6 +1378,7 @@ const CopyMatrixPreview = () => {
 			}
 			setHighlightedColumn(null);
 			closeColumnModal();
+			hasSavedChangesRef.current = true;
 			showSuccess("Column deleted");
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to delete column"));
@@ -1044,49 +1390,57 @@ const CopyMatrixPreview = () => {
 
 	const cloneRowOptions = allRowsData?.rows || rows;
 
-	const goToAssetSourceEdit = (
-		assetUploadId,
-		copyMatrixId = id,
-		{
-			requireNewAssetSourceName = false,
-			suggestedAssetSourceName = "",
-		} = {}
-	) => {
-		if (!assetUploadId) return;
-		dispatch(
-			api.util.invalidateTags([
-				{ type: "AssetUploads", id: assetUploadId },
-				{ type: "AssetSourceRows", id: assetUploadId },
-			])
-		);
-		navigate(`/asset-sources/${assetUploadId}/preview`, {
-			replace: true,
-			state: {
-				refreshFromCopyMatrix: true,
-				copyMatrixId,
-				syncedAt: Date.now(),
-				requireNewAssetSourceName,
-				...(requireNewAssetSourceName
-					? {
-							returnPath: "/asset-sources",
-							suggestedAssetSourceName:
-								suggestedAssetSourceName ||
-								matrix?.name ||
-								"",
-						}
-					: {}),
-			},
-		});
-	};
-
 	const handleBack = async () => {
 		if (isSavingOp) return;
-		if (isDraft) {
-			try {
-				await deleteCopyMatrix(id).unwrap();
-			} catch {
-				// ignore
+		try {
+			const pendingMap = capturePendingEditsMap(pendingEditsRef, tableRef);
+			const hasPendingEdits = Object.keys(pendingMap).length > 0;
+			const nameChanged =
+				Boolean(displayName.trim()) &&
+				displayName.trim() !== String(matrix?.name || "").trim();
+			const uniqueChanged =
+				Boolean(uniqueColumn) &&
+				uniqueColumn !== (matrix?.uniqueColumn || matrix?.defaultUniqueColumn);
+			const hasChanges =
+				hasPendingEdits ||
+				hasSavedChangesRef.current ||
+				nameChanged ||
+				uniqueChanged;
+
+			if (!hasChanges) {
+				if (isDraft) {
+					try {
+						await deleteCopyMatrix(id).unwrap();
+					} catch {
+						// ignore delete failures on unused draft
+					}
+					const stored = accountId ? readEditDraft("cm", accountId) : null;
+					if (stored && String(stored._id) === String(id)) {
+						clearEditDraft("cm", accountId);
+					}
+				}
+				// Keep existing edit-draft so Edit can still ask Load / Discard.
+				navigate("/copy-matrix");
+				return;
 			}
+
+			// Always keep edits local until Save — never flush cells to the server on leave.
+			if (accountId) {
+				writeEditDraft("cm", accountId, {
+					_id: id,
+					name: displayName.trim() || matrix?.name || "Untitled",
+					isCreateDraft: isDraft,
+					pendingEdits: pendingMap,
+				});
+			}
+			setPendingEdits({});
+			pendingEditsRef.current = {};
+			showSuccess("Saved as draft");
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to save draft before leaving")
+			);
+			return;
 		}
 		navigate("/copy-matrix");
 	};
@@ -1110,6 +1464,7 @@ const CopyMatrixPreview = () => {
 	};
 
 	const goToCopyMatrixList = () => {
+		if (accountId) clearEditDraft("cm", accountId);
 		dispatch(
 			api.util.invalidateTags([
 				{ type: "CopyMatrices", id: "LIST" },
@@ -1125,13 +1480,20 @@ const CopyMatrixPreview = () => {
 	const handlePrimaryAction = async () => {
 		if (isSavingOp || readOnly) return;
 		if (isDraft && !canFinishDraft) return;
-		if (isUnsyncedFinalized && !canSaveUnsynced) return;
+		if (
+			(isUnsyncedFinalized || isRecreate || creatingNewAssetSource) &&
+			!canSaveUnsynced
+		)
+			return;
 
 		setIsSavingOp(true);
 		setSaveProgress(0);
 		setSavePhase("saving");
 
 		try {
+			const validatedUniqueColumn =
+				await resolveUniqueColumnForSave();
+
 			if (hasLinkedAssetSource) {
 				const edits = collectEdits();
 
@@ -1159,14 +1521,22 @@ const CopyMatrixPreview = () => {
 						result?.message || "Copy matrix saved successfully"
 					);
 				} else {
-					showSuccess("No changes to save");
+					showSuccess(
+						hasSavedChangesRef.current
+							? "Changes saved"
+							: "No new changes to save"
+					);
 				}
 
 				goToCopyMatrixList();
 				return;
 			}
 
-			if (isUnsyncedFinalized) {
+			if (
+				isUnsyncedFinalized ||
+				isRecreate ||
+				creatingNewAssetSource
+			) {
 				const steps = [];
 				const edits = collectEdits();
 
@@ -1193,8 +1563,7 @@ const CopyMatrixPreview = () => {
 					});
 				}
 
-				const resolvedUnique =
-					uniqueColumn || matrix?.uniqueColumn || "";
+				const resolvedUnique = validatedUniqueColumn;
 				if (
 					resolvedUnique &&
 					resolvedUnique !== matrix?.uniqueColumn
@@ -1208,7 +1577,11 @@ const CopyMatrixPreview = () => {
 				}
 
 				if (steps.length === 0) {
-					showSuccess("No changes to save");
+					showSuccess(
+						hasSavedChangesRef.current
+							? "Changes saved"
+							: "No new changes to save"
+					);
 					goToCopyMatrixList();
 					return;
 				}
@@ -1251,21 +1624,29 @@ const CopyMatrixPreview = () => {
 			}
 
 			if (isDraft) {
-				const resolvedUnique = await resolveUniqueColumnForSave();
+				const edits = collectEdits();
+				const steps = [];
+				if (edits.length > 0) {
+					steps.push({
+						path: `/copy-matrix/${id}/rows`,
+						method: "PUT",
+						body: { rows: edits },
+						phase: "saving",
+					});
+				}
+				steps.push({
+					path: `/copy-matrix/${id}/finish`,
+					method: "POST",
+					body: {
+						name: displayName.trim() || matrix?.name,
+						uniqueColumn: validatedUniqueColumn,
+						finalizeOnly: true,
+					},
+					phase: "processing",
+				});
 
 				const result = await runJsonStepsWithProgress(
-					[
-						{
-							path: `/copy-matrix/${id}/finish`,
-							method: "POST",
-							body: {
-								name: displayName.trim() || matrix?.name,
-								uniqueColumn: resolvedUnique,
-								finalizeOnly: true,
-							},
-							phase: "processing",
-						},
-					],
+					steps,
 					({ percent, phase }) => {
 						setSaveProgress(percent);
 						setSavePhase(phase);
@@ -1279,63 +1660,11 @@ const CopyMatrixPreview = () => {
 				return;
 			}
 
-			if (isRecreate || creatingNewAssetSource) {
-				const useRecreateFinish =
-					isRecreate || creatingNewAssetSource;
-				const resolvedUnique = await resolveUniqueColumnForSave();
-				const uniqueToSend =
-					resolvedUnique ||
-					matrix?.uniqueColumn ||
-					AUTO_ROW_ID_COLUMN;
-
-				const result = await runJsonStepsWithProgress(
-					[
-						{
-							path: `/copy-matrix/${id}/finish`,
-							method: "POST",
-							body: useRecreateFinish
-								? {
-										uniqueColumn: uniqueToSend,
-										...(creatingNewAssetSource
-											? { forceNewAssetSource: true }
-											: {}),
-									}
-								: {
-										name: displayName.trim() || matrix?.name,
-										uniqueColumn: uniqueToSend,
-									},
-							phase: "processing",
-						},
-					],
-					({ percent, phase }) => {
-						setSaveProgress(percent);
-						setSavePhase(phase);
-					}
-				);
-
-				setPendingEdits({});
-				const assetUploadId = result?.data?.assetUploadId;
-				invalidateAfterSave(assetUploadId);
-
-				if (!assetUploadId) {
-					showError(
-						"Asset source was not created. Please try again."
-					);
-					return;
-				}
-
-				if (result?.data?.uniqueColumnNotice) {
-					showWarning(result.data.uniqueColumnNotice);
-				} else {
-					showSuccess(result?.message || "Copy matrix saved");
-				}
-
-				goToAssetSourceEdit(assetUploadId, id, {
-					requireNewAssetSourceName: creatingNewAssetSource,
-				});
-			}
 		} catch (error) {
-			if (error?.code === "UNIQUE_COLUMN_DUPLICATES") {
+			if (
+				error?.code === "UNIQUE_COLUMN_DUPLICATES" ||
+				error?.code === "UNIQUE_COLUMN_INVALID"
+			) {
 				showError(error.message);
 			} else {
 				showError(getApiErrorMessage(error));
@@ -1349,17 +1678,7 @@ const CopyMatrixPreview = () => {
 
 	const subtitle = readOnly
 		? "View only"
-		: isDraft
-		? "Edit the copy matrix, then Save to return to the list"
-		: creatingNewAssetSource
-		? "Edit if needed, then Finish to create a new asset source"
-		: hasLinkedAssetSource
-		? "Edit the copy matrix, then Save to return to the list"
-		: isUnsyncedFinalized
-		? "Edit the copy matrix, then Save to return to the list"
-		: isRecreate
-		? "Edit if needed, then Finish — set the asset source name on the next screen"
-		: "Click any cell to edit before finishing";
+		: "Edit the copy matrix, then Save to return to the list";
 
 	if (!matrixReady && loading) {
 		return (
@@ -1398,7 +1717,10 @@ const CopyMatrixPreview = () => {
 									disabled={
 										isSavingOp ||
 										(isDraft && !canFinishDraft) ||
-										(isUnsyncedFinalized && !canSaveUnsynced)
+										((isUnsyncedFinalized ||
+											isRecreate ||
+											creatingNewAssetSource) &&
+											!canSaveUnsynced)
 									}
 								/>
 							</>
@@ -1408,10 +1730,20 @@ const CopyMatrixPreview = () => {
 			</div>
 
 			<div className="px-8 py-4 border-b bg-gray-50">
-				<div className="flex flex-wrap items-start justify-between gap-4">
-					<div className="flex flex-wrap items-start gap-4">
-						<div className="w-52 shrink-0">
-							{isDraft || canEditMatrixName ? (
+				<div className="flex flex-wrap items-center justify-between gap-4">
+					<div
+						className={`flex min-h-10 flex-1 flex-wrap gap-x-8 gap-y-3 ${
+							isDraft ? "items-start" : "items-center"
+						}`}
+					>
+						<div
+							className={
+								isDraft
+									? "w-52 shrink-0"
+									: "min-w-0 max-w-[42rem]"
+							}
+						>
+							{isDraft ? (
 								<ValidatedNameInput
 									label="Matrix Name"
 									value={displayName}
@@ -1425,22 +1757,27 @@ const CopyMatrixPreview = () => {
 									onValidationChange={setNameValidation}
 								/>
 							) : (
-								<>
-									<label className="block text-sm font-semibold text-gray-700 mb-1">
-										Matrix Name
-									</label>
-									<div className="w-52 box-border px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-800 truncate">
-										{matrix?.name || "—"}
-									</div>
-								</>
+								<div className="flex min-w-0 items-center whitespace-nowrap text-sm text-gray-700">
+									<span className="shrink-0 font-semibold">
+										Matrix Name:
+									</span>{" "}
+									<span
+										className="ml-1 truncate"
+										title={
+											(matrix?.name || "").length > 64
+												? matrix.name
+												: undefined
+										}
+									>
+										{(matrix?.name || "").length > 64
+											? `${matrix.name.slice(0, 64)}…`
+											: matrix?.name || "—"}
+									</span>
+								</div>
 							)}
 						</div>
 
-						{(isDraft ||
-							isRecreate ||
-							creatingNewAssetSource ||
-							isUnsyncedFinalized) &&
-							columns.length > 0 && (
+						{isDraft && columns.length > 0 && (
 							<UniqueColumnSelector
 								columns={columns}
 								value={uniqueColumn || AUTO_ROW_ID_COLUMN}
@@ -1449,78 +1786,68 @@ const CopyMatrixPreview = () => {
 								isChecking={isCheckingUnique}
 								analysis={uniqueAnalysis}
 								className="!w-52 box-border shrink-0"
-								aside={
-									(matrix?.fileName ||
-										matrix?.processedRows != null) && (
-										<span className="text-sm text-gray-500 whitespace-nowrap">
-											{matrix?.fileName && (
-												<span className="mr-3">
-													{matrix.fileName}
-												</span>
-											)}
-											{matrix?.processedRows != null && (
-												<span>
-													{matrix.processedRows} rows
-												</span>
-											)}
-										</span>
-									)
-								}
 							/>
 						)}
 
-						{isSynced &&
-							!isDraft &&
-							!isRecreate &&
-							!creatingNewAssetSource &&
-							(uniqueColumn || matrix?.uniqueColumn) && (
+						{isDraft && matrix?.fileName && (
 							<div className="w-52 shrink-0">
-								<label className="block text-sm font-semibold text-gray-700 mb-1">
-									Unique Column
+								<label className="mb-1 block text-sm font-semibold text-gray-700">
+									Tab Name
 								</label>
-								<div className="w-52 box-border px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-800 truncate">
-									{uniqueColumn || matrix?.uniqueColumn}
+								<div
+									className="flex h-[42px] w-52 items-center truncate whitespace-nowrap text-sm text-gray-700"
+									title={matrix.fileName}
+								>
+									{matrix.fileName}
 								</div>
-								<p className="mt-1.5 max-w-52 text-xs text-gray-500">
-									Locked while synced with an asset source.
-								</p>
+							</div>
+						)}
+
+						{!isDraft &&
+							(uniqueColumn || matrix?.uniqueColumn) && (
+							<div className="text-sm text-gray-700">
+								<span className="font-semibold">
+									Unique Column:
+								</span>{" "}
+								<span>
+									{uniqueColumn || matrix?.uniqueColumn}
+								</span>
+							</div>
+						)}
+
+						{isDraft && matrix?.processedRows != null && (
+							<div className="w-28 shrink-0">
+								<label className="mb-1 block text-sm font-semibold text-gray-700">
+									Rows
+								</label>
+								<div className="flex h-[42px] items-center whitespace-nowrap text-sm text-gray-700">
+									{matrix.processedRows} rows
+								</div>
+							</div>
+						)}
+
+						{!isDraft && matrix?.processedRows != null && (
+							<div className="text-sm text-gray-700">
+								<span className="font-semibold">Rows:</span>{" "}
+								{matrix.processedRows} rows
 							</div>
 						)}
 
 						{/* When unique selector is hidden, still show file meta */}
-						{!(
-							(isDraft ||
-								isRecreate ||
-								creatingNewAssetSource ||
-								isUnsyncedFinalized) &&
-							columns.length > 0
-						) &&
+						{!isDraft &&
 							!(
-								isSynced &&
 								!isDraft &&
-								!isRecreate &&
-								!creatingNewAssetSource &&
 								(uniqueColumn || matrix?.uniqueColumn)
 							) &&
-							(matrix?.fileName ||
-								matrix?.processedRows != null) && (
-								<div className="text-sm text-gray-500 pt-7 whitespace-nowrap">
-									{matrix?.fileName && (
-										<span className="mr-3">
-											{matrix.fileName}
-										</span>
-									)}
-									{matrix?.processedRows != null && (
-										<span>
-											{matrix.processedRows} rows
-										</span>
-									)}
+							matrix?.fileName && (
+								<div className="text-sm text-gray-500 whitespace-nowrap">
+									{matrix.fileName}
 								</div>
 							)}
 					</div>
 
 					{!readOnly && (
-						<div className="shrink-0 pt-6">
+						<div className="flex shrink-0 self-center">
 							<CopyMatrixSheetToolbar
 								disabled={
 									isSavingOp ||
@@ -1563,15 +1890,27 @@ const CopyMatrixPreview = () => {
 					}
 					selectableRows={!readOnly}
 					columnMenus={!readOnly}
-					canRenameDeleteColumns={!isSynced}
+					canRenameDeleteColumns={canModifyColumnStructure}
 					renamingColumn={renamingColumn}
 					onColumnRenameSubmit={handleColumnRenameSubmit}
 					onColumnRenameCancel={() => setRenamingColumn(null)}
 					selectedRowIds={selectedRowIds}
 					onSelectedRowIdsChange={setSelectedRowIds}
 					onColumnAction={handleColumnAction}
+					onRowEdit={handleEditRow}
+					onRowCopy={handleCopyRow}
+					onRowDelete={handleDeleteRow}
 				/>
 			</div>
+
+			<EditSheetRowModal
+				isOpen={Boolean(editingRow)}
+				row={editingRow}
+				columns={columns}
+				readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
+				onClose={() => setEditingRow(null)}
+				onConfirm={handleSaveRow}
+			/>
 
 			<AddCopyMatrixColumnModal
 				isOpen={sheetModal === "addColumn"}
@@ -1635,6 +1974,28 @@ const CopyMatrixPreview = () => {
 				isLoading={isGeneratingText}
 			/>
 
+			<CopyMatrixUpdateImagesModal
+				isOpen={columnModal?.type === "update-images"}
+				onClose={closeColumnModal}
+				onUpload={handleUploadImages}
+				onApply={handleApplyImages}
+				targetColumn={columnModal?.column}
+				columns={columns}
+				folders={imageFoldersData?.folders || []}
+				isLoadingFolders={isLoadingImageFolders}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
+				anchorRect={columnModal?.anchorRect}
+				selectedCount={selectedRowIds.length}
+				isUploading={isUploadingImages || isSettingCdnUrl}
+				isApplying={isApplyingImages}
+			/>
+
 			<CopyMatrixSelectDateModal
 				isOpen={columnModal?.type === "select-date"}
 				onClose={closeColumnModal}
@@ -1682,6 +2043,16 @@ const CopyMatrixPreview = () => {
 					pendingFindFocusRef.current = null;
 					clearRowSelection();
 				}}
+			/>
+
+			<ConfirmDialog
+				isOpen={Boolean(deletingRow)}
+				onClose={() => setDeletingRow(null)}
+				onConfirm={handleDeleteRowConfirm}
+				title="Delete row?"
+				message="Are you sure you want to permanently delete this row?"
+				confirmLabel="Delete"
+				isLoading={isDeletingRow}
 			/>
 
 			<ConfirmDialog

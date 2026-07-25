@@ -18,10 +18,15 @@ import {
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
 	useUpdateAssetSourceRowsMutation,
+	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,
+	useDeleteAssetSourceMutation,
 	useFillAssetSourceColumnSequenceMutation,
 	useCopyAssetSourceColumnFromMutation,
 	useGenerateAssetSourceColumnTextMutation,
+	useUploadAssetSourceColumnImagesMutation,
+	useSetAssetSourceColumnCdnUrlMutation,
+	useApplyAssetSourceColumnImagesMutation,
 	useFillAssetSourceColumnDateMutation,
 	useReplaceAssetSourceColumnMutation,
 	useApplyAssetSourceColumnChangesMutation,
@@ -29,6 +34,7 @@ import {
 	useDeleteAssetSourceColumnMutation,
 	useCloneAssetSourceColumnMutation,
 	useAddAssetSourceRowMutation,
+	useDeleteAssetSourceRowMutation,
 	useAddAssetSourceColumnMutation,
 	useCloneAssetSourceRowMutation,
 } from "../../store/services/assetUpload";
@@ -38,7 +44,20 @@ import { showSuccess, showError, showWarning } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import ValidatedNameInput from "../../components/common/ValidatedNameInput";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
+import { useGetMindshareFoldersQuery } from "../../store/services/accounts";
 import { getDeletedAssetSourceNames } from "../../utils/copyMatrixHelpers";
+import { writeEditDraft, clearEditDraft, readEditDraft, capturePendingEditsMap } from "../../utils/editDraftStorage";
+import {
+	applyRowPatches,
+	fillSequenceLocal,
+	fillDateLocal,
+	fillColumnValueLocal,
+	generateTextLocal,
+	copyFromColumnLocal,
+	replaceInColumnLocal,
+	cellText,
+	selectTargetRows,
+} from "../../utils/localSheetEdits";
 import { normalizeCellText } from "../../utils/normalizeCellText";
 import { suggestCloneColumnName } from "../../utils/copyMatrixColumnHelpers";
 import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
@@ -47,7 +66,9 @@ import AddCopyMatrixColumnModal from "../../components/modals/copyMatrix/AddCopy
 import CloneCopyMatrixRowModal from "../../components/modals/copyMatrix/CloneCopyMatrixRowModal";
 import CloneCopyMatrixColumnModal from "../../components/modals/copyMatrix/CloneCopyMatrixColumnModal";
 import CopyMatrixFromColumnModal from "../../components/modals/copyMatrix/CopyMatrixFromColumnModal";
+import EditSheetRowModal from "../../components/modals/copyMatrix/EditSheetRowModal";
 import CopyMatrixGenerateTextModal from "../../components/modals/copyMatrix/CopyMatrixGenerateTextModal";
+import CopyMatrixUpdateImagesModal from "../../components/modals/copyMatrix/CopyMatrixUpdateImagesModal";
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
@@ -58,6 +79,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const location = useLocation();
 	const dispatch = useDispatch();
 	const breadcrumbs = useBreadcrumbs();
+	const skipEditDraft = Boolean(location.state?.skipEditDraft);
 	const tableRef = useRef(null);
 	const highlightTimeoutRef = useRef(null);
 	const pendingFindFocusRef = useRef(null);
@@ -66,14 +88,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const [rowsPerPage, setRowsPerPage] = useState(10);
 	const [name, setName] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
+	const hasSavedChangesRef = useRef(false);
+	const pendingEditsRef = useRef({});
 	const [nameValidation, setNameValidation] = useState({
 		isDuplicate: false,
 		isChecking: false,
 	});
 	const [selectedRowIds, setSelectedRowIds] = useState([]);
 	const [sheetModal, setSheetModal] = useState(null);
+	const [editingRow, setEditingRow] = useState(null);
+	const [deletingRow, setDeletingRow] = useState(null);
 	const [columnModal, setColumnModal] = useState(null);
 	const [renamingColumn, setRenamingColumn] = useState(null);
+	const [localUnsyncedColumns, setLocalUnsyncedColumns] = useState(
+		() => new Set()
+	);
 	const [highlightedColumn, setHighlightedColumn] = useState(null);
 	const [highlightedRowId, setHighlightedRowId] = useState(null);
 	const [duplicateHighlight, setDuplicateHighlight] = useState(null);
@@ -102,13 +131,22 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const [updateRows, { isLoading: isSaving }] =
 		useUpdateAssetSourceRowsMutation();
+	const [checkUniqueColumn] =
+		useCheckAssetSourceUniqueColumnMutation();
 	const [finishAssetSource, { isLoading: isFinishing }] =
 		useFinishAssetSourceMutation();
+	const [deleteAssetSource] = useDeleteAssetSourceMutation();
 	const [fillColumnSequence] = useFillAssetSourceColumnSequenceMutation();
 	const [copyColumnFrom, { isLoading: isCopyingFromColumn }] =
 		useCopyAssetSourceColumnFromMutation();
 	const [generateColumnText, { isLoading: isGeneratingText }] =
 		useGenerateAssetSourceColumnTextMutation();
+	const [uploadColumnImages, { isLoading: isUploadingImages }] =
+		useUploadAssetSourceColumnImagesMutation();
+	const [setColumnCdnUrl, { isLoading: isSettingCdnUrl }] =
+		useSetAssetSourceColumnCdnUrlMutation();
+	const [applyColumnImages, { isLoading: isApplyingImages }] =
+		useApplyAssetSourceColumnImagesMutation();
 	const [fillColumnDate, { isLoading: isFillingDate }] =
 		useFillAssetSourceColumnDateMutation();
 	const [replaceColumn, { isLoading: isReplacingColumn }] =
@@ -125,8 +163,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		useAddAssetSourceColumnMutation();
 	const [cloneAssetSourceRow, { isLoading: isCloningRow }] =
 		useCloneAssetSourceRowMutation();
+	const [deleteAssetSourceRow, { isLoading: isDeletingRow }] =
+		useDeleteAssetSourceRowMutation();
 
 	const isDraft = asset?.status === "draft";
+	const syncedColumnNames = useMemo(
+		() => new Set(asset?.syncedColumns || []),
+		[asset?.syncedColumns]
+	);
+	const canModifyColumnStructure = useCallback(
+		(column) =>
+			!readOnly &&
+			(localUnsyncedColumns.has(column) ||
+				!syncedColumnNames.has(column)),
+		[readOnly, syncedColumnNames, localUnsyncedColumns]
+	);
 
 	const columns = useMemo(
 		() => rowsData?.columns || asset?.columns || [],
@@ -162,7 +213,16 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	};
 
 	const { data: meData } = useGetMeQuery();
-	const accountId = asset?.accountId || meData?.activeAccount?._id;
+	const accountId = String(
+		asset?.accountId?._id || asset?.accountId || meData?.activeAccount?._id || ""
+	);
+	const {
+		data: imageFoldersData,
+		isFetching: isLoadingImageFolders,
+	} = useGetMindshareFoldersQuery(accountId, {
+		skip: !accountId,
+		pollingInterval: 60 * 60 * 1000,
+	});
 	const savedName = asset?.name || "";
 	const deletedAssetSourceNames = getDeletedAssetSourceNames(asset);
 	const requireNewAssetSourceName = Boolean(
@@ -184,19 +244,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		!nameValidation.isDuplicate &&
 		!nameValidation.isChecking;
 
-	const scheduleHighlightClear = () => {
+	const scheduleHighlightClear = useCallback(() => {
 		if (highlightTimeoutRef.current) {
 			clearTimeout(highlightTimeoutRef.current);
 		}
 		highlightTimeoutRef.current = setTimeout(() => {
 			setHighlightedColumn(null);
 			setHighlightedRowId(null);
-		}, 4000);
-	};
+			setDuplicateHighlight(null);
+		}, 15000);
+	}, []);
 
 	useEffect(() => {
 		setName("");
 		setPendingEdits({});
+		pendingEditsRef.current = {};
 		setPage(1);
 		setSelectedRowIds([]);
 		setSheetModal(null);
@@ -204,6 +266,17 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		setReplacePanel(null);
 		setRenamingColumn(null);
 	}, [id]);
+
+	// Resume locally saved cell edits (create draft or completed).
+	useEffect(() => {
+		if (!accountId || !id || skipEditDraft) return;
+		const draft = readEditDraft("as", accountId);
+		if (!draft || String(draft._id) !== String(id)) return;
+		const pending = draft.pendingEdits || {};
+		if (Object.keys(pending).length === 0) return;
+		pendingEditsRef.current = pending;
+		setPendingEdits(pending);
+	}, [accountId, id, skipEditDraft]);
 
 	useEffect(() => {
 		if (!asset || isRecreateDraft) return;
@@ -238,28 +311,136 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	}, []);
 
 	const handleCellChange = useCallback((rowId, rowData) => {
-		setPendingEdits((prev) => ({
-			...prev,
-			[rowId]: { ...prev[rowId], ...rowData },
-		}));
+		const next = {
+			...pendingEditsRef.current,
+			[rowId]: {
+				...pendingEditsRef.current[rowId],
+				...rowData,
+			},
+		};
+		pendingEditsRef.current = next;
+		setPendingEdits(next);
 	}, []);
 
-	const flushPendingEditsIfAny = async () => {
+	const commitLocalPatches = useCallback((patches) => {
+		if (!patches?.length) return 0;
+		const next = applyRowPatches(pendingEditsRef.current, patches);
+		pendingEditsRef.current = next;
+		setPendingEdits(next);
+		return patches.length;
+	}, []);
+
+	useEffect(() => {
+		pendingEditsRef.current = pendingEdits;
+	}, [pendingEdits]);
+
+	// Keep a local draft snapshot as the user edits (until Save clears it).
+	useEffect(() => {
+		if (!accountId || !id || readOnly) return;
+		const hasPending = Object.keys(pendingEdits).length > 0;
+		if (!hasPending && !hasSavedChangesRef.current) return;
+		const timer = window.setTimeout(() => {
+			writeEditDraft("as", accountId, {
+				_id: id,
+				name: name.trim() || asset?.name || "Untitled",
+				isCreateDraft: Boolean(isDraft),
+				pendingEdits: pendingEditsRef.current || {},
+			});
+		}, 400);
+		return () => window.clearTimeout(timer);
+	}, [accountId, id, readOnly, pendingEdits, name, asset?.name, isDraft]);
+
+	const collectEdits = useCallback(() => {
 		const flushed = tableRef.current?.flushActiveEdit?.();
-		const merged = { ...pendingEdits };
+		const merged = { ...pendingEditsRef.current };
 		if (flushed?.rowId) {
 			merged[flushed.rowId] = {
 				...merged[flushed.rowId],
 				...flushed.rowData,
 			};
 		}
-		const edits = Object.entries(merged).map(([rowId, data]) => {
+		return Object.entries(merged).map(([rowId, data]) => {
 			const rowData = { ...data };
 			delete rowData._id;
 			delete rowData.rowIndex;
 			delete rowData.primaryKey;
 			return { _id: rowId, rowData };
 		});
+	}, []);
+
+	const validateUniqueColumn = useCallback(
+		async (edits = []) => {
+			const column = asset?.uniqueColumn || AUTO_ROW_ID_COLUMN;
+			const analysis = await checkUniqueColumn({
+				id,
+				column,
+				rows: edits,
+			}).unwrap();
+			if (analysis?.unique) {
+				setDuplicateHighlight(null);
+				return analysis;
+			}
+
+			const duplicateRowIds = (analysis?.duplicates || []).flatMap(
+				(item) => item.rowIds || []
+			);
+			const rowIds = Array.from(
+				new Set([
+					...duplicateRowIds,
+					...(analysis?.emptyRowIds || []),
+				].map(String))
+			);
+			setDuplicateHighlight({
+				column,
+				rowIds,
+				message: analysis?.message || null,
+			});
+			scheduleHighlightClear();
+			const firstIndex =
+				analysis?.duplicates?.[0]?.rowIndexes?.[0] ??
+				analysis?.emptyRowIndexes?.[0];
+			if (firstIndex != null) {
+				setPage(
+					Math.max(
+						1,
+						Math.ceil(Number(firstIndex) / rowsPerPage)
+					)
+				);
+			}
+			const error = new Error(
+				analysis?.message ||
+					`"${column}" must contain non-empty, distinct values.`
+			);
+			error.code = "UNIQUE_COLUMN_INVALID";
+			throw error;
+		},
+		[
+			asset?.uniqueColumn,
+			checkUniqueColumn,
+			id,
+			rowsPerPage,
+			scheduleHighlightClear,
+		]
+	);
+
+	useEffect(() => {
+		if (!id || !asset?.uniqueColumn) return;
+		validateUniqueColumn([]).catch(() => {});
+	}, [id, asset?.uniqueColumn, validateUniqueColumn]);
+
+	const flushPendingEditsIfAny = async () => {
+		const edits = collectEdits();
+		if (edits.length === 0) {
+			setPendingEdits({});
+			return;
+		}
+		await validateUniqueColumn(edits);
+		await updateRows({ id, rows: edits }).unwrap();
+		setPendingEdits({});
+	};
+
+	const flushPendingEditsForLeave = async () => {
+		const edits = collectEdits();
 		if (edits.length === 0) {
 			setPendingEdits({});
 			return;
@@ -300,6 +481,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				scheduleHighlightClear();
 			}
 			setPage(targetPage);
+			hasSavedChangesRef.current = true;
 			showSuccess("Row added");
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to add row"));
@@ -317,6 +499,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				setHighlightedRowId(null);
 				scheduleHighlightClear();
 			}
+			hasSavedChangesRef.current = true;
 			showSuccess("Column added");
 			closeSheetModal();
 		} catch (error) {
@@ -327,11 +510,86 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const handleCloneRow = async (sourceRowId) => {
 		try {
 			await flushPendingEditsIfAny();
-			await cloneAssetSourceRow({ id, sourceRowId }).unwrap();
+			const result = await cloneAssetSourceRow({
+				id,
+				sourceRowId,
+			}).unwrap();
+			const newRow = result?.row || result?.data?.row;
+			const newRowId = newRow?._id;
+			const newIndex = newRow?.rowIndex;
+			if (newRowId) {
+				setHighlightedRowId(String(newRowId));
+				setHighlightedColumn(null);
+				scheduleHighlightClear();
+			}
+			if (newIndex != null) {
+				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
+			}
 			showSuccess("Row cloned");
+			hasSavedChangesRef.current = true;
 			closeSheetModal();
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to clone row"));
+		}
+	};
+
+	const handleEditRow = (row) => setEditingRow(row);
+
+	const handleSaveRow = (rowData) => {
+		if (!editingRow?._id) return;
+		const changed = columns.some(
+			(column) =>
+				normalizeCellText(rowData[column]) !==
+				normalizeCellText(editingRow[column])
+		);
+		if (!changed) {
+			setEditingRow(null);
+			showWarning("No row changes to save");
+			return;
+		}
+		handleCellChange(editingRow._id, rowData);
+		setEditingRow(null);
+		showSuccess("Row changes ready to save");
+	};
+
+	const handleDeleteRow = (row) => setDeletingRow(row);
+
+	const handleDeleteRowConfirm = async () => {
+		if (!deletingRow?._id) return;
+		try {
+			await deleteAssetSourceRow({
+				id,
+				rowId: deletingRow._id,
+			}).unwrap();
+			setDeletingRow(null);
+			hasSavedChangesRef.current = true;
+			showSuccess("Row deleted");
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to delete row"));
+		}
+	};
+
+	const handleCopyRow = async (row) => {
+		try {
+			const result = await cloneAssetSourceRow({
+				id,
+				sourceRowId: row._id,
+			}).unwrap();
+			const newRow = result?.row || result?.data?.row;
+			const newRowId = newRow?._id;
+			const newIndex = newRow?.rowIndex ?? Number(row.rowIndex) + 1;
+			if (newRowId) {
+				setHighlightedRowId(String(newRowId));
+				setHighlightedColumn(null);
+				scheduleHighlightClear();
+			}
+			if (newIndex != null) {
+				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
+			}
+			showSuccess("Row copied");
+			hasSavedChangesRef.current = true;
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to copy row"));
 		}
 	};
 
@@ -343,6 +601,12 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				sourceColumn,
 				newColumnName,
 			}).unwrap();
+			setLocalUnsyncedColumns((current) => {
+				const next = new Set(current);
+				next.add(newColumnName.trim());
+				return next;
+			});
+			hasSavedChangesRef.current = true;
 			showSuccess("Column cloned");
 			closeSheetModal();
 		} catch (error) {
@@ -353,6 +617,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const cloneRowOptions = allRowsData?.rows || rows;
 
 	const goToAssetSourceList = () => {
+		if (accountId) clearEditDraft("as", accountId);
 		dispatch(
 			api.util.invalidateTags([
 				"AssetUploads",
@@ -368,25 +633,20 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const handleSaveChanges = async () => {
 		try {
-			const flushed = tableRef.current?.flushActiveEdit?.();
-			const merged = { ...pendingEdits };
-			if (flushed?.rowId) {
-				merged[flushed.rowId] = {
-					...merged[flushed.rowId],
-					...flushed.rowData,
-				};
-			}
-			const edits = Object.entries(merged).map(([rowId, data]) => {
-				const rowData = { ...data };
-				delete rowData._id;
-				delete rowData.rowIndex;
-				delete rowData.primaryKey;
-				return { _id: rowId, rowData };
-			});
+			const edits = collectEdits();
 			if (edits.length === 0) {
-				showError("No changes to save");
+				if (hasSavedChangesRef.current) {
+					await validateUniqueColumn([]);
+				}
+				showSuccess(
+					hasSavedChangesRef.current
+						? "Changes saved"
+						: "No new changes to save"
+				);
+				goToAssetSourceList();
 				return;
 			}
+			await validateUniqueColumn(edits);
 			await updateRows({ id, rows: edits }).unwrap();
 			setPendingEdits({});
 			showSuccess("Changes saved");
@@ -405,9 +665,14 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		}
 		try {
 			try {
-				await flushPendingEditsIfAny();
+				const edits = collectEdits();
+				await validateUniqueColumn(edits);
+				if (edits.length > 0) {
+					await updateRows({ id, rows: edits }).unwrap();
+					setPendingEdits({});
+				}
 			} catch (error) {
-				showError(getApiErrorMessage(error));
+				showError(error?.message || getApiErrorMessage(error));
 				return;
 			}
 
@@ -429,21 +694,22 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		switch (action) {
 			case "sequence-number": {
 				try {
-					await flushPendingEditsIfAny();
+					tableRef.current?.flushActiveEdit?.();
 					const selected = getSelectedRowIds().map(String);
-					const result = await fillColumnSequence({
-						id,
-						column: columnName,
-						rowIds: selected.length ? selected : undefined,
-					}).unwrap();
+					const patches = fillSequenceLocal(
+						rows,
+						columnName,
+						selected.length ? selected : undefined
+					);
+					const updated = commitLocalPatches(patches);
 					setHighlightedColumn(columnName);
 					scheduleHighlightClear();
 					showSuccess(
 						selected.length
-							? `Sequence applied to ${result?.updated ?? 0} selected row${
-									(result?.updated ?? 0) === 1 ? "" : "s"
-							  }`
-							: `Sequence applied to ${result?.updated ?? 0} rows`
+							? `Sequence applied to ${updated} selected row${
+									updated === 1 ? "" : "s"
+							  } (draft)`
+							: `Sequence applied to ${updated} rows (draft)`
 					);
 					clearRowSelection();
 				} catch (error) {
@@ -463,6 +729,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			case "generate-text":
 				setColumnModal({
 					type: "generate-text",
+					column: columnName,
+					anchorRect: anchorRect || null,
+				});
+				break;
+			case "update-images":
+				setColumnModal({
+					type: "update-images",
 					column: columnName,
 					anchorRect: anchorRect || null,
 				});
@@ -510,18 +783,18 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				});
 				break;
 			case "rename-column":
-				if (!isDraft) {
+				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
-						"Column names cannot be changed after the asset source is finalized"
+						"This column cannot be renamed because it is synced with a copy matrix"
 					);
 					return;
 				}
 				setRenamingColumn(columnName);
 				break;
 			case "delete-column":
-				if (!isDraft) {
+				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
-						"Columns cannot be deleted after the asset source is finalized"
+						"This column cannot be deleted because it is synced with a copy matrix"
 					);
 					return;
 				}
@@ -546,24 +819,25 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
-			const result = await copyColumnFrom({
-				id,
+			const patches = copyFromColumnLocal(
+				rows,
 				targetColumn,
 				sourceColumn,
 				template,
 				splitBy,
-				rowIds: selected.length ? selected : undefined,
-			}).unwrap();
+				selected.length ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Extracted to ${result?.updated ?? 0} selected row${
-							(result?.updated ?? 0) === 1 ? "" : "s"
-					  }`
-					: `Extracted to ${result?.updated ?? 0} rows`
+					? `Extracted to ${updated} selected row${
+							updated === 1 ? "" : "s"
+					  } (draft)`
+					: `Extracted to ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -575,22 +849,23 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const targetColumn = columnModal?.column;
 		if (!targetColumn) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
-			const result = await generateColumnText({
-				id,
+			const patches = generateTextLocal(
+				rows,
 				targetColumn,
 				template,
-				rowIds: selected.length ? selected : undefined,
-			}).unwrap();
+				selected.length ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(targetColumn);
 			scheduleHighlightClear();
 			showSuccess(
 				selected.length
-					? `Text generated for ${result?.updated ?? 0} selected row${
-							(result?.updated ?? 0) === 1 ? "" : "s"
-					  }`
-					: `Text generated for ${result?.updated ?? 0} rows`
+					? `Text generated for ${updated} selected row${
+							updated === 1 ? "" : "s"
+					  } (draft)`
+					: `Text generated for ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -598,11 +873,152 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		}
 	};
 
+	const handleUploadImages = async ({
+		files,
+		template,
+		folder,
+		alsoUpdate = false,
+	}) => {
+		const targetColumn = columnModal?.column;
+		try {
+			tableRef.current?.flushActiveEdit?.();
+			const selected = getSelectedRowIds().map(String);
+			const applyToSelection = selected.length > 0 && Boolean(targetColumn);
+
+			const result = await uploadColumnImages({
+				id,
+				files,
+				folder: folder || undefined,
+			}).unwrap();
+
+			const cdnUrl = String(result?.cdnUrl || "").trim();
+
+			if (applyToSelection) {
+				if (!cdnUrl) {
+					showError(
+						"Upload succeeded but no CDN URL was found for the image. Wait a moment and try Update URLs, or upload again."
+					);
+					return;
+				}
+				const patches = fillColumnValueLocal(
+					rows,
+					targetColumn,
+					cdnUrl,
+					selected
+				);
+				const updated = commitLocalPatches(patches);
+				setHighlightedColumn(targetColumn);
+				scheduleHighlightClear();
+				showSuccess(
+					`Uploaded image and set CDN URL on ${updated} selected row${
+						updated === 1 ? "" : "s"
+					} (draft)`
+				);
+				closeColumnModal();
+				clearRowSelection();
+				return;
+			}
+
+			if (alsoUpdate && targetColumn && template) {
+				const targets = selectTargetRows(
+					rows,
+					selected.length ? selected : undefined
+				);
+				const applyResult = await applyColumnImages({
+					id,
+					targetColumn,
+					template,
+					folder,
+					rowIds: selected.length ? selected : undefined,
+					dryRun: true,
+					rowSnapshots: targets.map((row) => ({
+						_id: row._id,
+						rowData: row.rowData,
+					})),
+				}).unwrap();
+				const patches = (applyResult?.updates || []).map((u) => ({
+					rowId: String(u.rowId),
+					rowData: { [targetColumn]: u.url },
+				}));
+				const updated = commitLocalPatches(patches);
+				setHighlightedColumn(targetColumn);
+				scheduleHighlightClear();
+				showSuccess(
+					`Uploaded ${result?.uploaded ?? files?.length ?? 0} file${
+						(result?.uploaded ?? files?.length ?? 0) === 1
+							? ""
+							: "s"
+					}; updated ${updated} CDN URL${
+						updated === 1 ? "" : "s"
+					} (draft)`
+				);
+				closeColumnModal();
+				clearRowSelection();
+				return;
+			}
+
+			showSuccess(
+				result?.uploaded != null
+					? `Uploaded ${result.uploaded} file${
+							result.uploaded === 1 ? "" : "s"
+					  } to asset library`
+					: "Images uploaded to asset library"
+			);
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to upload images"));
+		}
+	};
+
+	const handleApplyImages = async ({ template, folder }) => {
+		const targetColumn = columnModal?.column;
+		if (!targetColumn) return;
+		try {
+			tableRef.current?.flushActiveEdit?.();
+			const selected = getSelectedRowIds().map(String);
+			const targets = selectTargetRows(
+				rows,
+				selected.length ? selected : undefined
+			);
+			const result = await applyColumnImages({
+				id,
+				targetColumn,
+				template,
+				folder,
+				rowIds: selected.length ? selected : undefined,
+				dryRun: true,
+				rowSnapshots: targets.map((row) => ({
+					_id: row._id,
+					rowData: row.rowData,
+				})),
+			}).unwrap();
+			const patches = (result?.updates || []).map((u) => ({
+				rowId: String(u.rowId),
+				rowData: { [targetColumn]: u.url },
+			}));
+			const updated = commitLocalPatches(patches);
+			setHighlightedColumn(targetColumn);
+			scheduleHighlightClear();
+			showSuccess(
+				`Updated ${updated} row${
+					updated === 1 ? "" : "s"
+				} with image URLs (draft)${
+					result?.missing
+						? ` (${result.missing} without a match)`
+						: ""
+				}`
+			);
+			closeColumnModal();
+			clearRowSelection();
+		} catch (error) {
+			showError(getApiErrorMessage(error, "Failed to apply images"));
+		}
+	};
+
 	const handleFillDate = async ({ dateValue, scope }) => {
 		const column = columnModal?.column;
 		if (!column) return;
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
 			if (scope === "selected" && selected.length === 0) {
 				showWarning("Select at least one row first");
@@ -612,18 +1028,19 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				scope === "selected" ||
 				(scope === "all" && selected.length > 0);
 
-			const result = await fillColumnDate({
-				id,
+			const patches = fillDateLocal(
+				rows,
 				column,
 				dateValue,
-				rowIds: limitToSelected ? selected : undefined,
-			}).unwrap();
+				limitToSelected ? selected : undefined
+			);
+			const updated = commitLocalPatches(patches);
 			setHighlightedColumn(column);
 			scheduleHighlightClear();
 			showSuccess(
 				limitToSelected
-					? `Date applied to ${result?.updated ?? 0} selected rows`
-					: `Date applied to ${result?.updated ?? 0} rows`
+					? `Date applied to ${updated} selected rows (draft)`
+					: `Date applied to ${updated} rows (draft)`
 			);
 			closeColumnModal();
 		} catch (error) {
@@ -675,7 +1092,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				message: null,
 			});
 		},
-		[page, rowsPerPage, replacePanel?.column]
+		[page, rowsPerPage, replacePanel?.column, scheduleHighlightClear]
 	);
 
 	useEffect(() => {
@@ -692,7 +1109,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			message: null,
 		});
 		pendingFindFocusRef.current = null;
-	}, [rows, page]);
+	}, [rows, page, scheduleHighlightClear]);
 
 	const handleReplaceInColumn = async ({
 		find,
@@ -705,8 +1122,12 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const query = String(find ?? "");
 
 		try {
-			await flushPendingEditsIfAny();
+			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
+			if (mode === "replace" && selected.length === 0) {
+				setReplaceStatusMessage("Select at least one row first");
+				return;
+			}
 
 			if (
 				mode === "find" &&
@@ -728,25 +1149,24 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			const limitToSelected =
 				mode === "replace" ||
 				(mode === "replaceAll" && selected.length > 0);
-
-			const result = await replaceColumn({
-				id,
-				column,
-				find: query,
-				replace: replace ?? "",
-				mode,
-				rowIds: limitToSelected ? selected : undefined,
-			}).unwrap();
-
-			const matchedRows = result?.matchedRows || [];
-			setReplaceStatusMessage(
-				result?.message ||
-					(mode === "find"
-						? `${result?.matched ?? 0} matching rows found`
-						: `Replaced ${result?.updated ?? 0} of ${
-								result?.matched ?? 0
-						  } matched rows`)
+			const targets = selectTargetRows(
+				rows,
+				limitToSelected ? selected : undefined
 			);
+
+			const matchedRows = [];
+			targets.forEach((row, offset) => {
+				const current = cellText(row.rowData?.[column]);
+				const isMatch = query === "" ? current === "" : current.includes(query);
+				if (isMatch) {
+					matchedRows.push({
+						rowId: String(row._id),
+						rowIndex: row.rowIndex,
+						offset,
+						before: current,
+					});
+				}
+			});
 
 			if (mode === "find") {
 				setFindQuery(query);
@@ -766,17 +1186,37 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				return;
 			}
 
-			if (result?.changes?.length) {
+			const replacement = String(replace ?? "");
+			const patches = replaceInColumnLocal(
+				targets,
+				column,
+				query,
+				replacement,
+				undefined
+			);
+			const changes = patches.map((patch) => {
+				const before =
+					matchedRows.find((m) => m.rowId === patch.rowId)?.before ??
+					"";
+				return {
+					rowId: patch.rowId,
+					before,
+					after: patch.rowData[column],
+				};
+			});
+			commitLocalPatches(patches);
+
+			if (changes.length) {
 				setReplaceUndoStack((prev) => [
 					...prev,
-					{
-						column: result.column || column,
-						changes: result.changes,
-					},
+					{ column, changes },
 				]);
 				setReplaceRedoStack([]);
 			}
 
+			setReplaceStatusMessage(
+				`Replaced ${patches.length} of ${matchedRows.length} matched rows (draft)`
+			);
 			setFindQuery("");
 			setFindMatches([]);
 			setFindMatchIndex(0);
@@ -795,17 +1235,14 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const applyReplaceChanges = async (entry, direction) => {
 		if (!entry?.changes?.length || !entry.column) return;
-		const changes = entry.changes.map((change) => ({
+		const patches = entry.changes.map((change) => ({
 			rowId: change.rowId,
-			value: direction === "undo" ? change.before : change.after,
+			rowData: {
+				[entry.column]:
+					direction === "undo" ? change.before : change.after,
+			},
 		}));
-		await applyColumnChanges({
-			id,
-			column: entry.column,
-			changes,
-			page,
-			limit: rowsPerPage,
-		}).unwrap();
+		commitLocalPatches(patches);
 		setHighlightedColumn(entry.column);
 		scheduleHighlightClear();
 		setDuplicateHighlight({
@@ -850,19 +1287,20 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	};
 
 	const handleColumnRenameSubmit = async (oldName, newName) => {
-		if (!isDraft) {
-			showWarning(
-				"Column names cannot be changed after the asset source is finalized"
-			);
-			setRenamingColumn(null);
-			return;
-		}
 		try {
 			await flushPendingEditsIfAny();
 			await renameColumn({ id, oldName, newName }).unwrap();
+			setLocalUnsyncedColumns((current) => {
+				if (!current.has(oldName)) return current;
+				const next = new Set(current);
+				next.delete(oldName);
+				next.add(newName);
+				return next;
+			});
 			setRenamingColumn(null);
 			setHighlightedColumn(newName);
 			scheduleHighlightClear();
+			hasSavedChangesRef.current = true;
 			showSuccess("Column renamed");
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to rename column"));
@@ -872,21 +1310,64 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const handleDeleteColumnConfirm = async () => {
 		const column = columnModal?.column;
 		if (!column) return;
-		if (!isDraft) {
-			showWarning(
-				"Columns cannot be deleted after the asset source is finalized"
-			);
-			closeColumnModal();
-			return;
-		}
 		try {
 			await flushPendingEditsIfAny();
 			await deleteColumn({ id, column }).unwrap();
+			hasSavedChangesRef.current = true;
 			showSuccess(`Deleted column "${column}"`);
 			closeColumnModal();
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to delete column"));
 		}
+	};
+
+	const handleLeave = async (toPath) => {
+		if (isBusy) return;
+		try {
+			const pendingMap = capturePendingEditsMap(pendingEditsRef, tableRef);
+			const hasPendingEdits = Object.keys(pendingMap).length > 0;
+			const nameChanged =
+				Boolean(name.trim()) &&
+				name.trim() !== String(asset?.name || "").trim();
+			const hasChanges =
+				hasPendingEdits || hasSavedChangesRef.current || nameChanged;
+
+			if (!hasChanges) {
+				if (isDraft) {
+					try {
+						await deleteAssetSource(id).unwrap();
+					} catch {
+						// ignore delete failures on unused draft
+					}
+					const stored = accountId ? readEditDraft("as", accountId) : null;
+					if (stored && String(stored._id) === String(id)) {
+						clearEditDraft("as", accountId);
+					}
+				}
+				// Keep existing edit-draft so Edit can still ask Load / Discard.
+				navigate(toPath);
+				return;
+			}
+
+			// Always keep edits local until Save — never flush cells to the server on leave.
+			if (accountId) {
+				writeEditDraft("as", accountId, {
+					_id: id,
+					name: name.trim() || asset?.name || "Untitled",
+					isCreateDraft: isDraft,
+					pendingEdits: pendingMap,
+				});
+			}
+			setPendingEdits({});
+			pendingEditsRef.current = {};
+			showSuccess("Saved as draft");
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to save draft before leaving")
+			);
+			return;
+		}
+		navigate(toPath);
 	};
 
 	return (
@@ -906,11 +1387,11 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 								<BackButton
 									key="back"
 									label="Back"
-									onClick={() => navigate(returnPath)}
+									onClick={() => handleLeave(returnPath)}
 								/>,
 								<CancelButton
 									key="cancel"
-									onClick={() => navigate("/asset-sources")}
+									onClick={() => handleLeave("/asset-sources")}
 								/>,
 								<SaveButton
 									key="save"
@@ -952,9 +1433,15 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			</div>
 
 			<div className="px-8 py-4 border-b bg-gray-50">
-				<div className="flex flex-wrap items-start justify-between gap-4">
-					<div className="flex flex-wrap items-start gap-6">
-						<div className="min-w-[200px]">
+				<div className="flex flex-wrap items-center justify-between gap-4">
+					<div className="flex min-h-10 flex-1 flex-wrap items-center gap-x-8 gap-y-3">
+						<div
+							className={
+								!readOnly && isDraft
+									? "min-w-[200px]"
+									: "min-w-0 max-w-[42rem]"
+							}
+						>
 							{!readOnly && isDraft ? (
 								<ValidatedNameInput
 									label="Asset Source Name"
@@ -969,33 +1456,51 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 									onValidationChange={setNameValidation}
 								/>
 							) : (
-								<>
-									<label className="block text-sm font-semibold text-gray-700 mb-1">
-										Asset Source Name
-									</label>
-									<div className="w-full max-w-md px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm font-medium text-gray-800">
-										{displayName}
-									</div>
-								</>
+								<div className="flex min-w-0 items-center whitespace-nowrap text-sm text-gray-700">
+									<span className="shrink-0 font-semibold">
+										Asset Source Name:
+									</span>{" "}
+									<span
+										className="ml-1 truncate"
+										title={
+											displayName.length > 64
+												? displayName
+												: undefined
+										}
+									>
+										{displayName.length > 64
+											? `${displayName.slice(0, 64)}…`
+											: displayName}
+									</span>
+								</div>
 							)}
 						</div>
 						{asset?.uniqueColumn && (
-							<div className="text-sm text-gray-500 pt-7">
-								Unique column:{" "}
-								<span className="font-medium text-gray-700">
+							<div className="text-sm text-gray-700">
+								<span className="font-semibold">
+									Unique Column:
+								</span>{" "}
+								<span>
 									{asset.uniqueColumn}
 								</span>
 							</div>
 						)}
 						{asset?.processedRows != null && (
-							<div className="text-sm text-gray-500 pt-7">
+							<div className="text-sm text-gray-700">
+								<span className="font-semibold">Rows:</span>{" "}
 								{asset.processedRows} rows
 							</div>
 						)}
 					</div>
 
+					{duplicateHighlight?.message && (
+						<div className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+							{duplicateHighlight.message}
+						</div>
+					)}
+
 					{!readOnly && (
-						<div className="shrink-0 pt-6">
+						<div className="flex shrink-0 self-center">
 							<CopyMatrixSheetToolbar
 								disabled={
 									isBusy ||
@@ -1032,10 +1537,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
 					selectableRows={!readOnly}
 					columnMenus={!readOnly}
-					canRenameDeleteColumns={!readOnly && isDraft}
+					canRenameDeleteColumns={canModifyColumnStructure}
 					selectedRowIds={selectedRowIds}
 					onSelectedRowIdsChange={setSelectedRowIds}
 					onColumnAction={handleColumnAction}
+					onRowEdit={handleEditRow}
+					onRowCopy={handleCopyRow}
+					onRowDelete={handleDeleteRow}
 					renamingColumn={renamingColumn}
 					onColumnRenameSubmit={handleColumnRenameSubmit}
 					onColumnRenameCancel={() => setRenamingColumn(null)}
@@ -1050,6 +1558,15 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					}
 				/>
 			</div>
+
+			<EditSheetRowModal
+				isOpen={Boolean(editingRow)}
+				row={editingRow}
+				columns={columns}
+				readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
+				onClose={() => setEditingRow(null)}
+				onConfirm={handleSaveRow}
+			/>
 
 			<AddCopyMatrixColumnModal
 				isOpen={sheetModal === "addColumn"}
@@ -1113,6 +1630,28 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				isLoading={isGeneratingText}
 			/>
 
+			<CopyMatrixUpdateImagesModal
+				isOpen={columnModal?.type === "update-images"}
+				onClose={closeColumnModal}
+				onUpload={handleUploadImages}
+				onApply={handleApplyImages}
+				targetColumn={columnModal?.column}
+				columns={columns}
+				folders={imageFoldersData?.folders || []}
+				isLoadingFolders={isLoadingImageFolders}
+				sampleRow={
+					rows.find((row) =>
+						selectedRowIds.some(
+							(rowId) => String(rowId) === String(row._id)
+						)
+					) || rows[0]
+				}
+				anchorRect={columnModal?.anchorRect}
+				selectedCount={selectedRowIds.length}
+				isUploading={isUploadingImages || isSettingCdnUrl}
+				isApplying={isApplyingImages}
+			/>
+
 			<CopyMatrixSelectDateModal
 				isOpen={columnModal?.type === "select-date"}
 				onClose={closeColumnModal}
@@ -1160,6 +1699,16 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					pendingFindFocusRef.current = null;
 					clearRowSelection();
 				}}
+			/>
+
+			<ConfirmDialog
+				isOpen={Boolean(deletingRow)}
+				onClose={() => setDeletingRow(null)}
+				onConfirm={handleDeleteRowConfirm}
+				title="Delete row?"
+				message="Are you sure you want to permanently delete this row?"
+				confirmLabel="Delete"
+				isLoading={isDeletingRow}
 			/>
 
 			<ConfirmDialog

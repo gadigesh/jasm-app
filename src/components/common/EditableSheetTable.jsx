@@ -6,6 +6,7 @@ import React, {
 	useEffect,
 	useMemo,
 } from "react";
+import { createPortal } from "react-dom";
 import RowPerPage from "./RowPerPage";
 import Pagination from "./Pagination";
 import { AUTO_ROW_ID_COLUMN } from "../../utils/constants";
@@ -13,6 +14,7 @@ import { cellEditInputClass } from "../../utils/formStyles";
 import CopyMatrixColumnHeader from "../copyMatrix/preview/CopyMatrixColumnHeader";
 import CopyMatrixRowCheckbox from "../copyMatrix/preview/CopyMatrixRowCheckbox";
 import { normalizeCellText } from "../../utils/normalizeCellText";
+import { Copy, Pencil, Trash2 } from "lucide-react";
 
 const EditableSheetTable = forwardRef(
 	(
@@ -41,12 +43,16 @@ const EditableSheetTable = forwardRef(
 			renamingColumn = null,
 			onColumnRenameSubmit,
 			onColumnRenameCancel,
+			onRowEdit,
+			onRowCopy,
+			onRowDelete,
 		},
 		ref
 	) => {
 		const [editingCell, setEditingCell] = useState(null);
 		const [editValue, setEditValue] = useState("");
 		const [scrolled, setScrolled] = useState(false);
+		const [rowActionTooltip, setRowActionTooltip] = useState(null);
 		const [columnWidths, setColumnWidths] = useState({});
 		const [internalSelectedIds, setInternalSelectedIds] = useState(
 			() => new Set()
@@ -310,6 +316,8 @@ const EditableSheetTable = forwardRef(
 		const showRowNumberColumn = !matrixHasRowIdColumn;
 		const showCheckboxes = selectableRows && !readOnly;
 		const showColumnMenus = columnMenus && !readOnly;
+		const showRowActions =
+			!readOnly && (onRowEdit || onRowCopy || onRowDelete);
 		const stickySecondLeft = showCheckboxes ? "left-[40px]" : "left-0";
 		const stickyCheckboxClass =
 			"sticky left-0 z-40 bg-gray-50 shadow-[1px_0_0_0_#e5e7eb]";
@@ -382,7 +390,10 @@ const EditableSheetTable = forwardRef(
 												readOnly={readOnly}
 												onAction={onColumnAction}
 												canRenameDelete={
-													canRenameDeleteColumns
+													typeof canRenameDeleteColumns ===
+													"function"
+														? canRenameDeleteColumns(col)
+														: canRenameDeleteColumns
 												}
 												isRenaming={renamingColumn === col}
 												existingColumns={columns}
@@ -444,6 +455,11 @@ const EditableSheetTable = forwardRef(
 										</th>
 									);
 								})}
+								{showRowActions && (
+									<th className="sticky right-0 top-0 z-40 w-[104px] min-w-[104px] border-b border-gray-200 bg-gray-50 px-2 py-3 text-center text-xs font-medium">
+										Actions
+									</th>
+								)}
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-gray-100">
@@ -604,6 +620,75 @@ const EditableSheetTable = forwardRef(
 												</td>
 											);
 										})}
+										{showRowActions && (
+											<td className="sticky right-0 z-20 w-[104px] min-w-[104px] border-l border-gray-200 bg-white px-1 py-1 shadow-[-1px_0_0_0_#f3f4f6]">
+												<div className="flex items-center justify-center gap-0.5">
+													{onRowEdit && (
+														<button
+															type="button"
+															onMouseEnter={(event) =>
+																setRowActionTooltip({
+																	label: "Edit row",
+																	rect: event.currentTarget.getBoundingClientRect(),
+																})
+															}
+															onMouseLeave={() =>
+																setRowActionTooltip(null)
+															}
+															onClick={() =>
+																onRowEdit(row)
+															}
+															className="group relative z-50 cursor-pointer rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 hover:z-[9999]"
+															aria-label="Edit row"
+														>
+															<Pencil size={14} />
+														</button>
+													)}
+													{onRowCopy && (
+														<button
+															type="button"
+															onMouseEnter={(event) =>
+																setRowActionTooltip({
+																	label: "Copy row",
+																	rect: event.currentTarget.getBoundingClientRect(),
+																})
+															}
+															onMouseLeave={() =>
+																setRowActionTooltip(null)
+															}
+															onClick={() =>
+																onRowCopy(row)
+															}
+															className="group relative z-50 cursor-pointer rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 hover:z-[9999]"
+															aria-label="Copy row"
+														>
+															<Copy size={14} />
+														</button>
+													)}
+													{onRowDelete && (
+														<button
+															type="button"
+															onMouseEnter={(event) =>
+																setRowActionTooltip({
+																	label: "Delete row",
+																	rect: event.currentTarget.getBoundingClientRect(),
+																})
+															}
+															onMouseLeave={() =>
+																setRowActionTooltip(null)
+															}
+															onClick={() =>
+																onRowDelete(row)
+															}
+															className="group relative z-50 cursor-pointer rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-500 hover:z-[9999]"
+															aria-label="Delete row"
+														>
+															<Trash2 size={14} />
+														</button>
+													)}
+												</div>
+											</td>
+										)}
 									</tr>
 								);
 							})}
@@ -624,6 +709,21 @@ const EditableSheetTable = forwardRef(
 						/>
 					</div>
 				)}
+				{rowActionTooltip &&
+					createPortal(
+						<span
+							className="pointer-events-none fixed z-[999999] -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-[10px] font-medium text-white shadow-lg"
+							style={{
+								top: rowActionTooltip.rect.bottom + 6,
+								left:
+									rowActionTooltip.rect.left +
+									rowActionTooltip.rect.width / 2,
+							}}
+						>
+							{rowActionTooltip.label}
+						</span>,
+						document.body
+					)}
 			</>
 		);
 	}

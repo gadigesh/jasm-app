@@ -8,6 +8,32 @@ const assetUpload = api.injectEndpoints({
 			providesTags: () => [{ type: "AssetUploads", id: "LIST" }, "AssetUploads"],
 		}),
 
+		getAssetSourceDraft: builder.query({
+			query: (accountId) => `/source/draft/${accountId}`,
+			transformResponse: (response) => response.data ?? null,
+			providesTags: (_r, _e, accountId) => [
+				{ type: "AssetUploads", id: `DRAFT-${accountId}` },
+			],
+		}),
+
+		saveAssetSourceDraft: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}/save-draft`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: ["AssetUploads", "CopyMatrices"],
+		}),
+
+		discardAssetSourceDraft: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}/discard-draft`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: ["AssetUploads", "CopyMatrices"],
+		}),
+
 		getAssetSource: builder.query({
 			query: (id) => `/source/${id}`,
 			transformResponse: (response) => response.data,
@@ -38,6 +64,15 @@ const assetUpload = api.injectEndpoints({
 				{ type: "AssetSourceRows", id },
 				{ type: "CopyMatrices", id: "LIST" },
 			],
+		}),
+
+		checkAssetSourceUniqueColumn: builder.mutation({
+			query: ({ id, column, rows = [] }) => ({
+				url: `/source/${id}/check-unique-column`,
+				method: "POST",
+				body: { column, rows },
+			}),
+			transformResponse: (response) => response.data,
 		}),
 
 		finishAssetSource: builder.mutation({
@@ -142,6 +177,93 @@ const assetUpload = api.injectEndpoints({
 			invalidatesTags: (_r, _e, { id }) => [
 				{ type: "AssetSourceRows", id },
 			],
+		}),
+
+		uploadAssetSourceColumnImages: builder.mutation({
+			query: ({ id, files, folder, targetColumn, rowIds }) => {
+				const body = new FormData();
+				if (folder) {
+					body.append("folder", folder);
+				}
+				for (const file of files || []) {
+					body.append("files", file);
+				}
+				const params = new URLSearchParams();
+				if (targetColumn) {
+					params.set("targetColumn", targetColumn);
+				}
+				if (Array.isArray(rowIds) && rowIds.length > 0) {
+					params.set("rowIds", JSON.stringify(rowIds));
+				}
+				if (folder) {
+					params.set("folder", folder);
+				}
+				const qs = params.toString();
+				return {
+					url: `/source/${id}/columns/update-images/upload${
+						qs ? `?${qs}` : ""
+					}`,
+					method: "POST",
+					body,
+				};
+			},
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id, rowIds }) =>
+				Array.isArray(rowIds) && rowIds.length > 0
+					? [
+							"MindshareFolders",
+							{ type: "AssetSourceRows", id },
+							"AssetUploads",
+					  ]
+					: ["MindshareFolders"],
+		}),
+
+		setAssetSourceColumnCdnUrl: builder.mutation({
+			query: ({ id, targetColumn, rowIds, cdnUrl }) => ({
+				url: `/source/${id}/columns/update-images/set-cdn`,
+				method: "POST",
+				body: { targetColumn, rowIds, cdnUrl },
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "AssetSourceRows", id },
+				"AssetUploads",
+			],
+		}),
+
+		getAssetSourceImageFolders: builder.query({
+			query: (id) => `/source/${id}/columns/update-images/folders`,
+			transformResponse: (response) => response.data,
+		}),
+
+		applyAssetSourceColumnImages: builder.mutation({
+			query: ({
+				id,
+				targetColumn,
+				prefixColumn,
+				template,
+				folder,
+				rowIds,
+				dryRun,
+				rowSnapshots,
+			}) => ({
+				url: `/source/${id}/columns/update-images/apply`,
+				method: "POST",
+				body: {
+					targetColumn,
+					prefixColumn,
+					template,
+					folder,
+					rowIds,
+					dryRun,
+					rowSnapshots,
+				},
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, { id, dryRun }) =>
+				dryRun
+					? []
+					: [{ type: "AssetSourceRows", id }, "AssetUploads"],
 		}),
 
 		fillAssetSourceColumnDate: builder.mutation({
@@ -282,6 +404,17 @@ const assetUpload = api.injectEndpoints({
 			],
 		}),
 
+		deleteAssetSourceRow: builder.mutation({
+			query: ({ id, rowId }) => ({
+				url: `/source/${id}/rows/${rowId}`,
+				method: "DELETE",
+			}),
+			invalidatesTags: (_r, _e, { id }) => [
+				{ type: "AssetSourceRows", id },
+				{ type: "AssetUploads", id },
+			],
+		}),
+
 		addAssetSourceColumn: builder.mutation({
 			query: ({ id, columnName }) => ({
 				url: `/source/${id}/columns/add`,
@@ -313,9 +446,14 @@ const assetUpload = api.injectEndpoints({
 
 export const {
 	useGetAssetUploadsQuery,
+	useGetAssetSourceDraftQuery,
+	useLazyGetAssetSourceDraftQuery,
+	useSaveAssetSourceDraftMutation,
+	useDiscardAssetSourceDraftMutation,
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
 	useUpdateAssetSourceRowsMutation,
+	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,
 	useDeleteAssetSourceMutation,
 	useCloneAssetSourceMutation,
@@ -324,6 +462,11 @@ export const {
 	useFillAssetSourceColumnSequenceMutation,
 	useCopyAssetSourceColumnFromMutation,
 	useGenerateAssetSourceColumnTextMutation,
+	useUploadAssetSourceColumnImagesMutation,
+	useSetAssetSourceColumnCdnUrlMutation,
+	useGetAssetSourceImageFoldersQuery,
+	useLazyGetAssetSourceImageFoldersQuery,
+	useApplyAssetSourceColumnImagesMutation,
 	useFillAssetSourceColumnDateMutation,
 	useReplaceAssetSourceColumnMutation,
 	useApplyAssetSourceColumnChangesMutation,
@@ -332,6 +475,7 @@ export const {
 	useCloneAssetSourceColumnMutation,
 	useReorderAssetSourceColumnsMutation,
 	useAddAssetSourceRowMutation,
+	useDeleteAssetSourceRowMutation,
 	useAddAssetSourceColumnMutation,
 	useCloneAssetSourceRowMutation,
 } = assetUpload;

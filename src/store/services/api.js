@@ -27,7 +27,7 @@ const baseQueryWithInterceptor = async (args, api, extraOptions) => {
 const api = createApi({
 	reducerPath: "api",
 	baseQuery: baseQueryWithInterceptor,
-	tagTypes: ["User", "AssetSources", "AssetTemplates", "AssetUploads", "AssetSourceRows", "Accounts", "CopyMatrices", "CopyMatrixRows"],
+	tagTypes: ["User", "AssetSources", "AssetTemplates", "AssetUploads", "AssetSourceRows", "Accounts", "CopyMatrices", "CopyMatrixRows", "MindshareFolders"],
 	endpoints: () => ({}),
 });
 

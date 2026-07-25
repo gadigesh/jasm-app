@@ -5,6 +5,8 @@ import { formInputClass } from "../../../utils/formStyles";
 import { AUTO_ROW_ID_COLUMN } from "../../../utils/constants";
 import { normalizeCellText } from "../../../utils/normalizeCellText";
 
+const SEQUENCE_TOKEN = "SN";
+
 const CopyMatrixGenerateTextModal = ({
 	isOpen,
 	onClose,
@@ -29,22 +31,29 @@ const CopyMatrixGenerateTextModal = ({
 	const availableColumns = useMemo(
 		() =>
 			columns.filter(
-				(column) =>
-					column !== AUTO_ROW_ID_COLUMN && column !== targetColumn
+				(column) => column !== AUTO_ROW_ID_COLUMN
 			),
-		[columns, targetColumn]
+		[columns]
 	);
 	const templateSuggestions = useMemo(() => {
 		const query = templateQuery.toLocaleLowerCase();
-		return availableColumns.filter((column) =>
-			column.toLocaleLowerCase().includes(query)
-		);
+		return [
+			...(SEQUENCE_TOKEN.toLocaleLowerCase().includes(query)
+				? [SEQUENCE_TOKEN]
+				: []),
+			...availableColumns.filter((column) =>
+				column.toLocaleLowerCase().includes(query)
+			),
+		];
 	}, [availableColumns, templateQuery]);
 	const hasSelectedRows = selectedCount > 0;
 	const canApply = !isLoading && template.trim().length > 0;
 	const example = template.replace(
-		/\[([^\[\]]+)\]/g,
-		(_match, column) => normalizeCellText(sampleRow?.[column])
+		/\[([^[\]]+)\]/g,
+		(_match, column) =>
+			column === SEQUENCE_TOKEN
+				? "1"
+				: normalizeCellText(sampleRow?.[column])
 	);
 
 	/* eslint-disable react-hooks/set-state-in-effect -- reset and position the reusable floating panel when it opens */
@@ -185,7 +194,7 @@ const CopyMatrixGenerateTextModal = ({
 			>
 				<GripVertical size={14} className="shrink-0 text-gray-400" />
 				<p className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-800">
-					Generate Text/Reporting — {targetColumn}
+					Generate Text/Number/Reporting — {targetColumn}
 				</p>
 				<button
 					type="button"
@@ -255,7 +264,7 @@ const CopyMatrixGenerateTextModal = ({
 								120
 							)
 						}
-						placeholder="Type [ to add a column, e.g. SKU-[Brand]:[Code]"
+						placeholder="Type [ to add a column or SN, e.g. SKU-[Brand]-[SN]"
 						disabled={isLoading}
 						autoComplete="off"
 						className={`${formInputClass} !h-[34px] !px-2 !py-1.5 font-mono text-xs`}
@@ -288,7 +297,7 @@ const CopyMatrixGenerateTextModal = ({
 				</label>
 				<p className="mt-1 text-[10px] text-gray-500">
 					Type [ to select a column. Everything outside [Column] is
-					used as text or a delimiter.
+					used as text or a delimiter. Use [SN] for sequence numbers.
 				</p>
 
 				<div className="mt-2 rounded-md border border-purple-100 bg-purple-50 p-2">

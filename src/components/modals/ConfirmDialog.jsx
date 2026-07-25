@@ -5,6 +5,7 @@ const ConfirmDialog = ({
 	isOpen,
 	onClose,
 	onConfirm,
+	onCancel,
 	title = "Are you sure?",
 	message = "This action cannot be undone.",
 	confirmLabel = "Delete",
@@ -18,6 +19,8 @@ const ConfirmDialog = ({
 		variant === "danger"
 			? "bg-red-600 hover:bg-red-700"
 			: "bg-[#B600C9] hover:bg-[#9a00ab]";
+
+	const handleCancel = onCancel || onClose;
 
 	return (
 		<div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -51,7 +54,7 @@ const ConfirmDialog = ({
 				<div className="flex justify-end gap-3 mt-6">
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={handleCancel}
 						disabled={isLoading}
 						className="px-5 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
 					>
