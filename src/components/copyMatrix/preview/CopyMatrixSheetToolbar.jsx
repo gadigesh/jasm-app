@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Plus, MoreHorizontal } from "lucide-react";
+import { ImagePlus, Plus, MoreHorizontal } from "lucide-react";
 import CopyMatrixMoreOptionsMenu from "./CopyMatrixMoreOptionsMenu";
 
 const toolbarBtnClass =
@@ -7,6 +7,7 @@ const toolbarBtnClass =
 
 const CopyMatrixSheetToolbar = ({
 	disabled = false,
+	onUpdateImages,
 	onAddRow,
 	onAddColumn,
 	onCloneRow,
@@ -17,6 +18,18 @@ const CopyMatrixSheetToolbar = ({
 
 	return (
 		<div className="flex items-center gap-2">
+			{onUpdateImages && (
+				<button
+					type="button"
+					disabled={disabled}
+					onClick={onUpdateImages}
+					className={toolbarBtnClass}
+				>
+					<ImagePlus size={16} />
+					Update Images
+				</button>
+			)}
+
 			<button
 				type="button"
 				disabled={disabled}

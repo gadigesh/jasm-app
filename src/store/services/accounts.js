@@ -32,6 +32,25 @@ const accountsApi = api.injectEndpoints({
 				{ type: "MindshareFolders", id: accountId },
 			],
 		}),
+		getMindshareAssets: builder.query({
+			query: ({
+				accountId,
+				page = 1,
+				limit = 10,
+				folder = "",
+				search = "",
+			}) => ({
+				url: `/accounts/${accountId}/mindshare/assets`,
+				params: {
+					page,
+					limit,
+					...(folder ? { folder } : {}),
+					...(search ? { search } : {}),
+				},
+			}),
+			transformResponse: (response) => response.data,
+			keepUnusedDataFor: 300,
+		}),
 	}),
 });
 
@@ -40,4 +59,5 @@ export const {
 	useGetAccountsQuery,
 	useSwitchAccountMutation,
 	useGetMindshareFoldersQuery,
+	useGetMindshareAssetsQuery,
 } = accountsApi;

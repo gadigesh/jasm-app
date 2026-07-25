@@ -74,6 +74,7 @@ import CopyMatrixUpdateImagesModal from "../../components/modals/copyMatrix/Copy
 import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMatrixSelectDateModal";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
+import AssetSourceImagesModal from "../../components/modals/assetSources/AssetSourceImagesModal";
 
 const isGenericAssetSourceName = (value) =>
 	["new asset source", "untitled"].includes(
@@ -1589,6 +1590,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 									isAddingRow ||
 									isAddingColumn
 								}
+								onUpdateImages={() => setSheetModal("assetImages")}
 								onAddRow={handleAddRow}
 								onAddColumn={() => setSheetModal("addColumn")}
 								onCloneRow={() => setSheetModal("cloneRow")}
@@ -1639,6 +1641,14 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					}
 				/>
 			</div>
+
+			<AssetSourceImagesModal
+				isOpen={sheetModal === "assetImages"}
+				onClose={closeSheetModal}
+				accountId={accountId}
+				columns={columns}
+				folders={imageFoldersData?.folders || []}
+			/>
 
 			<EditSheetRowModal
 				isOpen={Boolean(editingRow)}
