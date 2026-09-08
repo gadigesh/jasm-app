@@ -1,4 +1,5 @@
 import React from "react";
+import BrandLogo from "./BrandLogo";
 
 const LoginPage = ({ onLogin }) => {
 	const handleSubmit = (e) => {
@@ -11,16 +12,12 @@ const LoginPage = ({ onLogin }) => {
 			className="sticky min-h-screen w-full bg-no-repeat bg-cover bg-center"
 			style={{
 				backgroundImage:
-					"url('https://cdn.jivox.com/files/57886/updatedLogin%20BG.png')",
+					"url('/login-bg.png')",
 			}}
 		>
 			{/* LOGO */}
 			<div className="absolute top-6 left-8 z-40">
-				<img
-					src="https://jvx.app.jivox.com/studio/images/jivox_logo.png"
-					alt="Jivox"
-					className="h-8"
-				/>
+				<BrandLogo priority className="h-8 w-[104px] object-contain" />
 			</div>
 
 			{/* LEFT TEXT */}

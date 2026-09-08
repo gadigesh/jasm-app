@@ -1,7 +1,6 @@
-const BASE_URL =
-	import.meta.env.PROD
-		? "https://jasm-app-sever.onrender.com"
-		: "http://localhost:3333";
+import { API_BASE_URL } from "./apiConfig";
+
+const BASE_URL = API_BASE_URL;
 
 export async function downloadFromApi(path, filename, extension = ".csv") {
 	const res = await fetch(`${BASE_URL}${path}`, { credentials: "include" });

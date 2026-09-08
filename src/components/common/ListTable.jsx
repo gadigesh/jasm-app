@@ -24,10 +24,14 @@ const headerCellClass =
 const bodyCellClass =
 	"px-4 py-3 align-middle bg-white border-y border-gray-200 first:border-l first:rounded-l-lg last:border-r last:rounded-r-lg";
 
+const iconButtonClass =
+	"inline-flex items-center justify-center rounded p-0.5 text-gray-400 hover:text-indigo-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]";
+
 const ListTable = ({
 	columns = [],
 	rows = [],
 	loading = false,
+	caption,
 	onRowClick,
 	onView,
 	onEdit,
@@ -74,6 +78,7 @@ const ListTable = ({
 				className="max-h-[calc(100vh-290px)] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200"
 			>
 				<table className="w-full border-separate border-spacing-y-4 text-sm text-[#64748B]">
+					{caption ? <caption className="sr-only">{caption}</caption> : null}
 					<thead
 						className={`sticky top-0 z-20 transition-shadow duration-200 ${
 							scrolled ? "shadow-md" : ""
@@ -137,60 +142,70 @@ const ListTable = ({
 									>
 										<div className="flex justify-center items-center gap-3 text-gray-400">
 											<IconTooltip label={labels.edit}>
-												<Pencil
-													size={16}
-													className="cursor-pointer hover:text-indigo-600 transition-colors"
-													onClick={() =>
-														onEdit?.(row)
-													}
-												/>
+												<button
+													type="button"
+													aria-label={labels.edit}
+													className={iconButtonClass}
+													onClick={() => onEdit?.(row)}
+												>
+													<Pencil size={16} />
+												</button>
 											</IconTooltip>
 											<IconTooltip label={labels.view}>
-												<Eye
-													size={16}
-													className="cursor-pointer hover:text-indigo-600 transition-colors"
+												<button
+													type="button"
+													aria-label={labels.view}
+													className={iconButtonClass}
 													onClick={() =>
 														onView
 															? onView(row)
 															: onRowClick?.(row)
 													}
-												/>
+												>
+													<Eye size={16} />
+												</button>
 											</IconTooltip>
 											<IconTooltip
 												label={labels.download}
 											>
-												<Download
-													size={16}
-													className={`transition-colors ${
-														onDownload
-															? "cursor-pointer hover:text-indigo-600"
-															: "opacity-30 cursor-not-allowed"
-													}`}
+												<button
+													type="button"
+													aria-label={labels.download}
+													disabled={!onDownload}
+													className={`${iconButtonClass} disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400`}
 													onClick={() =>
 														onDownload?.(row)
 													}
-												/>
+												>
+													<Download size={16} />
+												</button>
 											</IconTooltip>
 											<IconTooltip label={labels.delete}>
-												<Trash
-													size={16}
-													className="cursor-pointer hover:text-red-500 transition-colors"
+												<button
+													type="button"
+													aria-label={labels.delete}
+													className={`${iconButtonClass} hover:text-red-500`}
 													onClick={() =>
 														onDelete?.(row)
 													}
-												/>
+												>
+													<Trash size={16} />
+												</button>
 											</IconTooltip>
 											{onClone && (
 												<IconTooltip
 													label={labels.clone}
 												>
-													<Copy
-														size={16}
-														className="cursor-pointer hover:text-indigo-600 transition-colors"
+													<button
+														type="button"
+														aria-label={labels.clone}
+														className={iconButtonClass}
 														onClick={() =>
 															onClone?.(row)
 														}
-													/>
+													>
+														<Copy size={16} />
+													</button>
 												</IconTooltip>
 											)}
 										</div>

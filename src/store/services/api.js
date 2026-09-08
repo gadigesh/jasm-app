@@ -1,5 +1,4 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import { showSuccess, showError } from "../../utils/toastMsg";
 import { API_BASE_URL } from "../../utils/apiConfig";
 
 const baseQuery = fetchBaseQuery({

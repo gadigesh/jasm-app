@@ -1,63 +1,85 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Provider } from "react-redux";
 import store from "./store/store";
 import MainLayout from "./layouts/MainLayout";
 import ProtectedRoute from "./layouts/ProtectedRoute";
-import Login from "./pages/auth/LoginPage";
-import Dashboard from "./pages/dashboard/Dashboard";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import AssetSourceList from "./pages/assetSources/AssetSourceList";
-import AssetSourcePreviewRoute from "./pages/assetSources/AssetSourcePreviewRoute";
-import AssetSourceCreatedSuccess from "./pages/assetSources/AssetSourceCreatedSuccess";
-import AssetSourceReviewChanges from "./pages/assetSources/AssetSourceReviewChanges";
-import CopyMatrixList from "./pages/copyMatrix/CopyMatrixList";
-import CopyMatrixPreview from "./pages/copyMatrix/CopyMatrixPreview";
-import CopyMatrixWorkflow from "./pages/copyMatrix/CopyMatrixWorkflow";
+
+const Login = lazy(() => import("./pages/auth/LoginPage"));
+const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
+const AssetSourceList = lazy(() =>
+	import("./pages/assetSources/AssetSourceList")
+);
+const AssetSourcePreviewRoute = lazy(() =>
+	import("./pages/assetSources/AssetSourcePreviewRoute")
+);
+const AssetSourceCreatedSuccess = lazy(() =>
+	import("./pages/assetSources/AssetSourceCreatedSuccess")
+);
+const AssetSourceReviewChanges = lazy(() =>
+	import("./pages/assetSources/AssetSourceReviewChanges")
+);
+const CopyMatrixList = lazy(() =>
+	import("./pages/copyMatrix/CopyMatrixList")
+);
+const CopyMatrixPreview = lazy(() =>
+	import("./pages/copyMatrix/CopyMatrixPreview")
+);
+const CopyMatrixWorkflow = lazy(() =>
+	import("./pages/copyMatrix/CopyMatrixWorkflow")
+);
+
+const RouteLoading = () => (
+	<div className="flex min-h-[40vh] items-center justify-center text-sm text-gray-500">
+		Loading…
+	</div>
+);
 
 function AppContent() {
 	return (
 		<BrowserRouter>
-			<Routes>
-				{/* Public */}
-				<Route path="/login" element={<Login />} />
+			<Suspense fallback={<RouteLoading />}>
+				<Routes>
+					{/* Public */}
+					<Route path="/login" element={<Login />} />
 
-				{/* Protected */}
-				<Route element={<ProtectedRoute />}>
-					<Route path="/" element={<MainLayout />}>
-						<Route index element={<Dashboard />} />
-						<Route path="dashboard" element={<Dashboard />} />
-						<Route
-							path="copy-matrix"
-							element={<CopyMatrixList />}
-						/>
-						<Route
-							path="copy-matrix/:id/preview"
-							element={<CopyMatrixPreview />}
-						/>
-						<Route
-							path="copy-matrix/:id/workflow"
-							element={<CopyMatrixWorkflow />}
-						/>
-						<Route
-							path="asset-sources/:id/preview"
-							element={<AssetSourcePreviewRoute />}
-						/>
-						<Route
-							path="asset-sources/:id/success"
-							element={<AssetSourceCreatedSuccess />}
-						/>
-						<Route
-							path="asset-sources/:id/review"
-							element={<AssetSourceReviewChanges />}
-						/>
-						<Route
-							path="asset-sources"
-							element={<AssetSourceList />}
-						/>
+					{/* Protected */}
+					<Route element={<ProtectedRoute />}>
+						<Route path="/" element={<MainLayout />}>
+							<Route index element={<Dashboard />} />
+							<Route path="dashboard" element={<Dashboard />} />
+							<Route
+								path="copy-matrix"
+								element={<CopyMatrixList />}
+							/>
+							<Route
+								path="copy-matrix/:id/preview"
+								element={<CopyMatrixPreview />}
+							/>
+							<Route
+								path="copy-matrix/:id/workflow"
+								element={<CopyMatrixWorkflow />}
+							/>
+							<Route
+								path="asset-sources/:id/preview"
+								element={<AssetSourcePreviewRoute />}
+							/>
+							<Route
+								path="asset-sources/:id/success"
+								element={<AssetSourceCreatedSuccess />}
+							/>
+							<Route
+								path="asset-sources/:id/review"
+								element={<AssetSourceReviewChanges />}
+							/>
+							<Route
+								path="asset-sources"
+								element={<AssetSourceList />}
+							/>
+						</Route>
 					</Route>
-				</Route>
-			</Routes>
+				</Routes>
+			</Suspense>
 		</BrowserRouter>
 	);
 }
@@ -66,15 +88,6 @@ function App() {
 	return (
 		<Provider store={store}>
 			<AppContent />
-			<ToastContainer
-				position="top-right"
-				autoClose={3000}
-				closeButton={false}
-				hideProgressBar
-				toastClassName="!bg-transparent !shadow-none"
-				bodyClassName="p-0"
-				style={{ zIndex: 99999 }}
-			/>
 		</Provider>
 	);
 }

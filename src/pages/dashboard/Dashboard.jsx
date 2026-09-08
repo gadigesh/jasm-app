@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, lazy, Suspense } from "react";
 import CampaignCard from "../../components/common/CampaignCard";
 import PageHeader from "../../components/navigation/PageHeader";
-import AddAccountModal from "../../components/modals/AddAccountModal";
+
+const AddAccountModal = lazy(() =>
+	import("../../components/modals/AddAccountModal")
+);
 import {
 	useGetAccountsQuery,
 	useSwitchAccountMutation,
@@ -13,9 +16,11 @@ import {
 } from "../../components/navigation/HeaderActions";
 
 import { useNavigate } from "react-router-dom";
+import { usePageTitle } from "../../hooks/usePageTitle";
 
 const Dashboard = () => {
 	const navigate = useNavigate();
+	usePageTitle("Dashboard");
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [sortType, setSortType] = useState("recent");
 	const [filterType, setFilterType] = useState("all");
@@ -95,22 +100,27 @@ const Dashboard = () => {
 				)}
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-					{displayedCampaigns.map((campaign) => (
+					{displayedCampaigns.map((campaign, index) => (
 						<CampaignCard
 							key={campaign.id}
 							name={campaign.accountName}
 							client={campaign.clientName}
 							lastUpdated={campaign.lastUpdated}
 							status={campaign.accountStatus}
+							priority={index === 0}
 							onClick={() => handleCardClick(campaign.id)}
 						/>
 					))}
 				</div>
 			</div>
-			<AddAccountModal
-				isOpen={isModalOpen}
-				onClose={() => setIsModalOpen(false)}
-			/>
+			{isModalOpen ? (
+				<Suspense fallback={null}>
+					<AddAccountModal
+						isOpen={isModalOpen}
+						onClose={() => setIsModalOpen(false)}
+					/>
+				</Suspense>
+			) : null}
 		</div>
 	);
 };

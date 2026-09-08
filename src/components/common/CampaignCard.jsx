@@ -1,16 +1,31 @@
 import React from "react";
 import { timeAgo } from "../../utils/constants";
 
-const CampaignCard = ({ name, client, lastUpdated, status, onClick }) => {
+const CampaignCard = ({
+	name,
+	client,
+	lastUpdated,
+	status,
+	onClick,
+	priority = false,
+}) => {
+	const handleKeyDown = (event) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			onClick?.();
+		}
+	};
+
 	return (
 		<div
+			role="button"
+			tabIndex={0}
 			onClick={onClick}
+			onKeyDown={handleKeyDown}
 			className="bg-white cursor-pointer rounded-2xl shadow-lg border border-[#EEF2F6] overflow-hidden flex flex-col hover:shadow-2xl transition-shadow"
 		>
-			{/* Top Section */}
 			<div className="p-6 flex justify-between items-start">
 				<div className="flex-1">
-					{/* Status Badge */}
 					<span
 						className={`inline-block px-2.5 py-1 text-[10px] font-bold rounded-md mb-4 ${
 							status === "Active"
@@ -21,7 +36,6 @@ const CampaignCard = ({ name, client, lastUpdated, status, onClick }) => {
 						{status}
 					</span>
 
-					{/* Title and Client */}
 					<h3 className="text-xl font-bold text-[#1A1C1E] leading-tight mb-2">
 						{name}
 					</h3>
@@ -30,20 +44,26 @@ const CampaignCard = ({ name, client, lastUpdated, status, onClick }) => {
 					</p>
 				</div>
 
-				{/* Custom Decorative Icon (Megaphone + Media) */}
 				<img
-					className="w-16 h-16 relative right-4"
-					src="https://cdn.jivox.com/files/57886/ClipBigMike.png"
+					className="h-16 w-auto object-contain relative right-4"
+					src="/clip-big-mike.png"
 					alt="ClipBigMike"
+					width="106"
+					height="109"
+					loading={priority ? "eager" : "lazy"}
+					fetchPriority={priority ? "high" : "low"}
+					decoding={priority ? "sync" : "async"}
 				/>
 			</div>
 
-			{/* Footer Section */}
 			<div className="mt-auto bg-[#F8FAFC] px-6 py-4 flex justify-between items-center border-t border-[#EEF2F6]">
 				<span className="text-xs text-[#94A3B8] font-medium">
 					Last updated {timeAgo(lastUpdated)}
 				</span>
-				<button className="text-xs font-bold text-[#B600C9] hover:underline underline-offset-4 transition-all">
+				<button
+					type="button"
+					className="text-xs font-bold text-[#B600C9] hover:underline underline-offset-4 transition-all"
+				>
 					View Details
 				</button>
 			</div>

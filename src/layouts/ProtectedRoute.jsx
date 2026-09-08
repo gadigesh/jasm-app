@@ -4,11 +4,11 @@ import { useGetMeQuery } from "../store/services/userAuthApi";
 const ProtectedRoute = () => {
 	const { isLoading, isSuccess } = useGetMeQuery();
 
-	if (isLoading) {
-		return <p>Checking authentication...</p>;
+	if (!isLoading && !isSuccess) {
+		return <Navigate to="/login" replace />;
 	}
 
-	return isSuccess ? <Outlet /> : <Navigate to="/login" replace />;
+	return <Outlet />;
 };
 
 export default ProtectedRoute;

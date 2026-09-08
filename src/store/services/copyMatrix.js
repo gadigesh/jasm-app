@@ -80,10 +80,15 @@ const copyMatrixApi = api.injectEndpoints({
 		}),
 
 		getCopyMatrixColumnValues: builder.query({
-			query: ({ id, column }) =>
-				`/copy-matrix/${id}/rows/values?column=${encodeURIComponent(
-					column
-				)}`,
+			query: ({ id, column, filters = {} }) => {
+				const params = new URLSearchParams({
+					column: String(column || ""),
+				});
+				if (Object.keys(filters || {}).length > 0) {
+					params.set("filters", JSON.stringify(filters));
+				}
+				return `/copy-matrix/${id}/rows/values?${params.toString()}`;
+			},
 			transformResponse: (response) => response.data,
 		}),
 

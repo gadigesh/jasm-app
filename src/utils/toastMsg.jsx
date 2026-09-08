@@ -1,9 +1,34 @@
-import { toast } from "react-toastify";
-import AppToast from "../components/common/AppToast";
+import { createElement } from "react";
+
+let toastApi;
+
+async function getToastApi() {
+	if (!toastApi) {
+		toastApi = (async () => {
+			const [{ toast }, { default: AppToast }, { default: ToastHost }] =
+				await Promise.all([
+					import("react-toastify"),
+					import("../components/common/AppToast"),
+					import("../components/common/ToastHost"),
+				]);
+			const { createRoot } = await import("react-dom/client");
+			const node = document.createElement("div");
+			document.body.appendChild(node);
+			createRoot(node).render(createElement(ToastHost));
+			await new Promise((resolve) => {
+				requestAnimationFrame(() => resolve());
+			});
+			return { toast, AppToast };
+		})();
+	}
+	return toastApi;
+}
 
 const showToast = (type, message) => {
-	toast(<AppToast type={type} message={message} />, {
-		autoClose: 3000,
+	getToastApi().then(({ toast, AppToast }) => {
+		toast(createElement(AppToast, { type, message }), {
+			autoClose: 3000,
+		});
 	});
 };
 

@@ -51,7 +51,7 @@ import CopyMatrixSelectDateModal from "../../components/modals/copyMatrix/CopyMa
 import ConfirmDialog from "../../components/modals/ConfirmDialog";
 import CopyMatrixReplacePanel from "../../components/copyMatrix/preview/CopyMatrixReplacePanel";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
-import { useGetMindshareFoldersQuery } from "../../store/services/accounts";
+import { useLazyGetMindshareFoldersQuery } from "../../store/services/accounts";
 import api from "../../store/services/api";
 import { showSuccess, showError, showWarning } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
@@ -200,13 +200,10 @@ const CopyMatrixPreview = () => {
 	const accountId = String(
 		matrix?.accountId?._id || matrix?.accountId || meData?.activeAccount?._id || ""
 	);
-	const {
-		data: imageFoldersData,
-		isFetching: isLoadingImageFolders,
-	} = useGetMindshareFoldersQuery(accountId, {
-		skip: !accountId,
-		pollingInterval: 60 * 60 * 1000,
-	});
+	const [
+		fetchImageFolders,
+		{ data: imageFoldersData, isFetching: isLoadingImageFolders },
+	] = useLazyGetMindshareFoldersQuery();
 
 	const [deleteCopyMatrix] = useDeleteCopyMatrixMutation();
 	const [addCopyMatrixRow, { isLoading: isAddingRow }] =
@@ -796,6 +793,7 @@ const CopyMatrixPreview = () => {
 			const result = await fetchColumnValues({
 				id,
 				column: columnName,
+				filters: columnFilters,
 			}).unwrap();
 			setFilterValues(result?.values || []);
 		} catch (error) {
@@ -879,6 +877,9 @@ const CopyMatrixPreview = () => {
 				});
 				break;
 			case "update-images":
+				if (accountId) {
+					fetchImageFolders(accountId, true);
+				}
 				setColumnModal({
 					type: "update-images",
 					column: columnName,
@@ -1795,7 +1796,7 @@ const CopyMatrixPreview = () => {
 	if (!matrixReady && loading) {
 		return (
 			<div className="bg-white min-h-full flex items-center justify-center">
-				<span className="loading loading-spinner loading-lg text-primary" />
+				<span className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
 			</div>
 		);
 	}

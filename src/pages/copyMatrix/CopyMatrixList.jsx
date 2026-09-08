@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Info } from "lucide-react";
 import AssetAccountHeader from "../../components/navigation/AssetAccountHeader";
@@ -27,6 +27,8 @@ import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { resolveCopyMatrixEditPath } from "../../utils/copyMatrixHelpers";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import { readActiveAccountId } from "../../utils/activeAccountStorage";
 import {
 	readEditDraft,
 	clearEditDraft,
@@ -68,8 +70,11 @@ function formatSyncedAsTooltip(names) {
 const CopyMatrixList = () => {
 	const navigate = useNavigate();
 	const breadcrumbs = useBreadcrumbs();
+	usePageTitle("Copy Matrix");
 	const [sortBy, setSortBy] = useState("recent");
 	const [filterStatus, setFilterStatus] = useState("all");
+	const [page, setPage] = useState(1);
+	const [rowsPerPage, setRowsPerPage] = useState(10);
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [cloneTarget, setCloneTarget] = useState(null);
@@ -79,7 +84,7 @@ const CopyMatrixList = () => {
 	const { data: meData } = useGetMeQuery();
 	const activeAccountId = meData?.activeAccount?._id
 		? String(meData.activeAccount._id)
-		: undefined;
+		: readActiveAccountId();
 
 	const {
 		data: matrices = [],
@@ -129,6 +134,20 @@ const CopyMatrixList = () => {
 
 		return result;
 	}, [matrices, sortBy, filterStatus]);
+
+	useEffect(() => {
+		setPage(1);
+	}, [sortBy, filterStatus, rowsPerPage]);
+
+	const totalPages = Math.max(
+		1,
+		Math.ceil(filteredAndSortedData.length / rowsPerPage)
+	);
+	const currentPage = Math.min(page, totalPages);
+	const pagedRows = useMemo(() => {
+		const start = (currentPage - 1) * rowsPerPage;
+		return filteredAndSortedData.slice(start, start + rowsPerPage);
+	}, [filteredAndSortedData, currentPage, rowsPerPage]);
 
 	const openDraft = (draft) => {
 		if (!draft?._id) return;
@@ -393,7 +412,8 @@ const CopyMatrixList = () => {
 			<div className="min-h-0 flex-1 flex flex-col">
 				<ListTable
 					columns={columns}
-					rows={filteredAndSortedData}
+					rows={pagedRows}
+					caption="Copy matrix list"
 					loading={
 						isLoading && !isFetching && matrices.length === 0
 					}
@@ -412,11 +432,11 @@ const CopyMatrixList = () => {
 				/>
 				<div className="px-6">
 					<div className="flex items-center justify-between">
-						<RowPerPage value={10} onChange={() => {}} />
+						<RowPerPage value={rowsPerPage} onChange={setRowsPerPage} />
 						<Pagination
-							currentPage={1}
-							totalPages={1}
-							onPageChange={() => {}}
+							currentPage={currentPage}
+							totalPages={totalPages}
+							onPageChange={setPage}
 						/>
 					</div>
 				</div>

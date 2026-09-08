@@ -47,7 +47,7 @@ import { showSuccess, showError, showWarning } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import ValidatedNameInput from "../../components/common/ValidatedNameInput";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
-import { useGetMindshareFoldersQuery } from "../../store/services/accounts";
+import { useLazyGetMindshareFoldersQuery } from "../../store/services/accounts";
 import { getDeletedAssetSourceNames } from "../../utils/copyMatrixHelpers";
 import { writeEditDraft, clearEditDraft, readEditDraft, capturePendingEditsMap } from "../../utils/editDraftStorage";
 import {
@@ -407,13 +407,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const accountId = String(
 		asset?.accountId?._id || asset?.accountId || meData?.activeAccount?._id || ""
 	);
-	const {
-		data: imageFoldersData,
-		isFetching: isLoadingImageFolders,
-	} = useGetMindshareFoldersQuery(accountId, {
-		skip: !accountId,
-		pollingInterval: 60 * 60 * 1000,
-	});
+	const [
+		fetchImageFolders,
+		{ data: imageFoldersData, isFetching: isLoadingImageFolders },
+	] = useLazyGetMindshareFoldersQuery();
 	const savedName = asset?.name || "";
 	const deletedAssetSourceNames = getDeletedAssetSourceNames(asset);
 	const requireNewAssetSourceName = Boolean(
@@ -758,6 +755,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const closeSheetModal = () => setSheetModal(null);
 
+	const openImageAssets = () => {
+		setSheetModal("assetImages");
+		if (accountId) {
+			fetchImageFolders(accountId, true);
+		}
+	};
+
 	const closeColumnModal = () => {
 		setColumnModal(null);
 		clearRowSelection();
@@ -1052,6 +1056,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			const result = await fetchColumnValues({
 				id,
 				column: columnName,
+				filters: columnFilters,
 			}).unwrap();
 			setFilterValues(result?.values || []);
 		} catch (error) {
@@ -1135,6 +1140,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				});
 				break;
 			case "update-images":
+				if (accountId) {
+					fetchImageFolders(accountId, true);
+				}
 				setColumnModal({
 					type: "update-images",
 					column: columnName,
@@ -1973,7 +1981,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 								onRedo={handleEditRedo}
 								canUndo={editHistoryCounts.undo > 0}
 								canRedo={editHistoryCounts.redo > 0}
-								onUpdateImages={() => setSheetModal("assetImages")}
+								onUpdateImages={openImageAssets}
 								onAddRow={handleAddRow}
 								onAddColumn={() => setSheetModal("addColumn")}
 								onCloneRow={() => setSheetModal("cloneRow")}

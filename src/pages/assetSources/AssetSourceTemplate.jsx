@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { AddButton } from "../../components/navigation/HeaderActions";
 import AddASTemplate from "../../components/modals/AddASTemplate";
 import { useGetAssetTemplatesQuery } from "../../store/services/assetTemplate";
-import { ICON_MAP } from "../../utils/constants";
+import { ICON_MAP } from "../../utils/iconMap";
 import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 
 const AssetSourceTemplate = () => {
@@ -25,7 +25,6 @@ const AssetSourceTemplate = () => {
 
 	const { data: templates, isLoading: templatesLoading } =
 		useGetAssetTemplatesQuery();
-	console.log("TEMPLATES DATA:", templates);
 
 	return (
 		<div className="flex flex-col h-full bg-[#fcfcfc] relative">

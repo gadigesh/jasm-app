@@ -69,10 +69,15 @@ const assetUpload = api.injectEndpoints({
 		}),
 
 		getAssetSourceColumnValues: builder.query({
-			query: ({ id, column }) =>
-				`/source/${id}/rows/values?column=${encodeURIComponent(
-					column
-				)}`,
+			query: ({ id, column, filters = {} }) => {
+				const params = new URLSearchParams({
+					column: String(column || ""),
+				});
+				if (Object.keys(filters || {}).length > 0) {
+					params.set("filters", JSON.stringify(filters));
+				}
+				return `/source/${id}/rows/values?${params.toString()}`;
+			},
 			transformResponse: (response) => response.data,
 		}),
 

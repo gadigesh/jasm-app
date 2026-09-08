@@ -22,7 +22,7 @@ const CopyMatrixWorkflow = () => {
 
 	return (
 		<div className="bg-white min-h-full flex items-center justify-center">
-			<span className="loading loading-spinner loading-lg text-primary" />
+			<span className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
 		</div>
 	);
 };

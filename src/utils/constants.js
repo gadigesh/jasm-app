@@ -62,32 +62,6 @@ export const copyMatrixListHeaders = [
 	{ key: "status", label: "Status", align: "center" },
 ];
 
-import {
-	FileSpreadsheet,
-	ShoppingBag,
-	Hand,
-	UserCog,
-	ShoppingCart,
-	Target,
-	Share2,
-	Settings,
-	ArrowRight,
-	User,
-} from "lucide-react";
-
-export const ICON_MAP = {
-	FileSpreadsheet,
-	ShoppingBag,
-	Hand,
-	UserCog,
-	ShoppingCart,
-	Target,
-	Share2,
-	Settings,
-	ArrowRight,
-	User
-};
-
 export const NAVIGATION_META = {
 	dashboard: {
 		label: "Dashboard",

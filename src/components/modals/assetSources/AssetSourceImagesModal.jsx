@@ -533,6 +533,7 @@ const AssetSourceImagesModal = ({
 																	}
 																	className="h-full w-full object-contain p-1"
 																	loading="lazy"
+																	decoding="async"
 																/>
 															</div>
 														) : (

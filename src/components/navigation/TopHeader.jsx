@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Bell, Search, ChevronDown, LogOut, User } from "lucide-react";
+import { Search, ChevronDown, LogOut, User } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { useLogoutMutation } from "../../store/services/userAuthApi";
 import { removeUser } from "../../store/slices/userSlice";
 import { useNavigate } from "react-router-dom";
 import { showSuccess } from "../../utils/toastMsg";
+import { writeActiveAccountId } from "../../utils/activeAccountStorage";
 const TopHeader = () => {
 	const user = useSelector((state) => state.user);
 	const [logout] = useLogoutMutation();
@@ -31,6 +32,7 @@ const TopHeader = () => {
 	const handleLogout = () => {
 		logout().unwrap();
 		dispatch(removeUser());
+		writeActiveAccountId();
 		showSuccess("Logout successful");
 		navigate("/login");
 	};
@@ -43,8 +45,9 @@ const TopHeader = () => {
 					<Search className="h-4 w-4 text-[#7C3AED]" />
 				</div>
 				<input
-					type="text"
+					type="search"
 					placeholder="Search"
+					aria-label="Search"
 					className="w-full bg-white border border-[#7C3AED] rounded-md py-2 pl-10 pr-12 text-sm text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] focus:border-[#7C3AED] transition-all"
 				/>
 				<div className="absolute inset-y-0 right-3 flex items-center space-x-1">
@@ -68,15 +71,29 @@ const TopHeader = () => {
 				{/* User Profile */}
 				<div className="relative" ref={dropdownRef}>
 					<button
+						type="button"
+						aria-expanded={isDropdownOpen}
+						aria-haspopup="menu"
 						onClick={() => setIsDropdownOpen(!isDropdownOpen)}
 						className="flex items-center space-x-3 hover:bg-gray-50 p-1 rounded-lg transition-colors focus:outline-none"
 					>
 						<div className="w-9 h-9 rounded-full bg-[#E0F2F1] overflow-hidden border-2 border-[#7C3AED]/20 p-0.5 shadow-sm">
-							<img
-								src={user.photoUrl || ""}
-								alt="User"
-								className="h-full w-full object-cover rounded-full"
-							/>
+							{user.photoUrl ? (
+								<img
+									src={user.photoUrl}
+									alt="User"
+									width="32"
+									height="32"
+									decoding="async"
+									className="h-full w-full object-cover rounded-full"
+								/>
+							) : (
+								<span className="flex h-full w-full items-center justify-center rounded-full text-xs font-bold text-violet-700">
+									{user.firstName?.[0] ||
+										user.emailId?.[0] ||
+										"U"}
+								</span>
+							)}
 						</div>
 						<div className="flex flex-col items-start">
 							<span className="text-sm font-bold text-gray-700 leading-none">
@@ -94,6 +111,7 @@ const TopHeader = () => {
 					{isDropdownOpen && (
 						<div className="absolute right-0 mt-2 w-[80%] bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
 							<button
+								type="button"
 								className="flex items-center leading-none w-full px-4 py-2 text-sm text-gray-700 hover:bg-[#F3E8FF] hover:text-[#7C3AED] transition-colors"
 								onClick={() => {
 									navigate("/dashboard");
@@ -105,6 +123,7 @@ const TopHeader = () => {
 							</button>
 
 							<button
+								type="button"
 								onClick={() => {
 									handleLogout();
 									setIsDropdownOpen(false);

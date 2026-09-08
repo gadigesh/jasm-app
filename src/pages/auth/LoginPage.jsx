@@ -8,6 +8,8 @@ import {
 import { useDispatch } from "react-redux";
 import { addUser } from "../../store/slices/userSlice";
 import { showError, showSuccess } from "../../utils/toastMsg";
+import BrandLogo from "../../components/common/BrandLogo";
+import { usePageTitle } from "../../hooks/usePageTitle";
 const LoginPage = () => {
 	const [emailId, setEmail] = useState("12345@gmail.com");
 	const [password, setPassword] = useState("Jiv0x@Secure#2025!");
@@ -18,6 +20,7 @@ const LoginPage = () => {
 	const [login, { isLoading }] = useLoginMutation();
 	const [signup] = useSignupMutation();
 	const dispatch = useDispatch();
+	usePageTitle(isLoginForm ? "Sign Up" : "Sign In");
 	const handleLogin = async () => {
 		try {
 			const response = await login({ emailId, password }).unwrap();
@@ -61,16 +64,12 @@ const LoginPage = () => {
 			<div
 				className="
 					w-full h-full
-					bg-[url('https://cdn.jivox.com/files/57886/updatedLogin%20BG.png')]
+					bg-[url('/login-bg.png')]
 					bg-cover bg-no-repeat bg-center
 					"
 			/>
 			<div className="absolute top-6 left-8 z-40">
-				<img
-					src="https://jvx.app.jivox.com/studio/images/jivox_logo.png"
-					alt="Jivox"
-					className="h-8"
-				/>
+				<BrandLogo priority className="h-8 w-[104px] object-contain" />
 			</div>
 			<div className="absolute top-20 left-1/3 transform -translate-x-1/2 z-30 max-w-lg">
 				<h1 className="text-3xl font-bold text-slate-900 leading-snug">

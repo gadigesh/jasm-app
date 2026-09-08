@@ -31,9 +31,13 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 	}
 
 	return (
-		<div className="flex items-center gap-2 justify-end px-4">
+		<nav
+			aria-label="Pagination"
+			className="flex items-center gap-2 justify-end px-4"
+		>
 			<button
 				type="button"
+				aria-label="Previous page"
 				onClick={() => onPageChange(Math.max(1, safePage - 1))}
 				className="p-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
 				disabled={safePage === 1}
@@ -49,6 +53,10 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 						typeof page === "number" && onPageChange(page)
 					}
 					disabled={page === "..."}
+					aria-label={
+						typeof page === "number" ? `Page ${page}` : "More pages"
+					}
+					aria-current={page === safePage ? "page" : undefined}
 					className={`min-w-8 h-8 flex items-center justify-center rounded text-sm font-medium transition-colors px-1
             ${
 				page === safePage
@@ -64,6 +72,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 
 			<button
 				type="button"
+				aria-label="Next page"
 				onClick={() =>
 					onPageChange(Math.min(safeTotal, safePage + 1))
 				}
@@ -72,7 +81,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 			>
 				<ChevronRight size={16} />
 			</button>
-		</div>
+		</nav>
 	);
 };
 

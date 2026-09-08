@@ -10,13 +10,15 @@ const AssetViewTabs = () => {
 	const navigate = useNavigate();
 
 	return (
-		<div className="flex gap-3">
+		<div className="flex gap-3" aria-label="Workspace views">
 			{TABS.map((tab) => {
 				const isActive = pathname.startsWith(tab.path);
 
 				return (
 					<button
 						key={tab.key}
+						type="button"
+						aria-current={isActive ? "page" : undefined}
 						onClick={() => navigate(tab.path)}
 						className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
 							isActive

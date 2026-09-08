@@ -64,5 +64,6 @@ export const {
 	useGetAccountsQuery,
 	useSwitchAccountMutation,
 	useGetMindshareFoldersQuery,
+	useLazyGetMindshareFoldersQuery,
 	useGetMindshareAssetsQuery,
 } = accountsApi;

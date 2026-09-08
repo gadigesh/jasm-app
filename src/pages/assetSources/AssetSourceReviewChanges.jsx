@@ -59,6 +59,10 @@ const ImageValue = ({ value, label }) => {
 				src={text}
 				alt={label}
 				className="h-20 w-32 rounded border border-gray-200 bg-gray-50 object-contain"
+						width="128"
+						height="80"
+						loading="lazy"
+						decoding="async"
 				onError={(event) => {
 					event.currentTarget.style.display = "none";
 				}}
