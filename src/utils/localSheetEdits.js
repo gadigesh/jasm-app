@@ -10,6 +10,43 @@ export function rowValues(row) {
 	return row && typeof row === "object" ? row : {};
 }
 
+/**
+ * Send only unsaved values needed to expand an image filename template.
+ * The server loads complete rows, avoiding full-sheet request payloads.
+ */
+export function buildTemplateRowOverrides(edits = [], template = "", rowIds) {
+	const columns = Array.from(
+		new Set(
+			Array.from(String(template).matchAll(/\[([^[\]]+)\]/g))
+				.map((match) => match[1].trim())
+				.filter((column) => column && column.toUpperCase() !== "SN")
+		)
+	);
+	if (columns.length === 0) return undefined;
+
+	const selected = rowIds?.length
+		? new Set(rowIds.map((rowId) => String(rowId)))
+		: null;
+	const overrides = [];
+
+	for (const edit of edits || []) {
+		const rowId = String(edit?._id || edit?.rowId || "");
+		if (!rowId || (selected && !selected.has(rowId))) continue;
+		const source = edit?.rowData || {};
+		const rowData = {};
+		for (const column of columns) {
+			if (Object.prototype.hasOwnProperty.call(source, column)) {
+				rowData[column] = source[column];
+			}
+		}
+		if (Object.keys(rowData).length > 0) {
+			overrides.push({ _id: rowId, rowData });
+		}
+	}
+
+	return overrides.length > 0 ? overrides : undefined;
+}
+
 export function mergePendingIntoRows(serverRows = [], pendingEdits = {}) {
 	return (serverRows || []).map((row) => {
 		const edit = pendingEdits[row._id];

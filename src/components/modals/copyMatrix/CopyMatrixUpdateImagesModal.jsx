@@ -348,40 +348,26 @@ const CopyMatrixUpdateImagesModal = ({
 			className="pointer-events-auto fixed z-[10000] flex min-h-[240px] w-[480px] flex-col overflow-visible rounded-xl border border-gray-200 bg-white shadow-2xl"
 		>
 			{(isBusy || busyPercent > 0) && (
-				<div className="absolute inset-0 z-[60] flex flex-col items-center justify-center rounded-xl bg-white/90 px-6 backdrop-blur-[1px]">
-					<Loader2
-						size={22}
-						className="mb-3 animate-spin text-violet-600"
-					/>
-					<p className="mb-3 text-sm font-semibold text-gray-800">
-						{busyTitle}
-					</p>
-					<div
-						role="progressbar"
-						aria-valuemin={0}
-						aria-valuemax={100}
-						aria-valuenow={Math.round(busyPercent)}
-						className="w-full max-w-[280px]"
-					>
-						<div className="mb-1.5 flex justify-between text-[11px] text-gray-600">
-							<span>
-								{isUploading
-									? "Uploading..."
-									: isApplying
-										? "Updating..."
-										: "Finishing..."}
-							</span>
-							<span>{Math.round(busyPercent)}%</span>
-						</div>
-						<div className="h-2 overflow-hidden rounded-full bg-gray-200">
-							<div
-								className="h-full rounded-full bg-[#7C3AED] transition-all duration-300 ease-out"
-								style={{ width: `${busyPercent}%` }}
-							/>
-						</div>
-						<p className="mt-3 text-center text-[11px] text-gray-500">
-							{busyMessage}
-						</p>
+				<div
+					className="pointer-events-none absolute right-3 top-2 z-[60] w-48 rounded-lg border border-violet-200 bg-white/95 px-2.5 py-1.5 shadow-md"
+					role="progressbar"
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={Math.round(busyPercent)}
+					aria-valuetext={busyMessage}
+				>
+					<div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-violet-800">
+						<span className="flex min-w-0 items-center gap-1.5">
+							<Loader2 size={12} className="shrink-0 animate-spin" />
+							<span className="truncate">{busyTitle}</span>
+						</span>
+						<span>{Math.round(busyPercent)}%</span>
+					</div>
+					<div className="mt-1 h-1 overflow-hidden rounded-full bg-violet-100">
+						<div
+							className="h-full rounded-full bg-[#7C3AED] transition-all duration-300 ease-out"
+							style={{ width: `${busyPercent}%` }}
+						/>
 					</div>
 				</div>
 			)}

@@ -22,6 +22,9 @@ function parseDraft(raw) {
 				parsed.pendingEdits && typeof parsed.pendingEdits === "object"
 					? parsed.pendingEdits
 					: {},
+		deletedRows: Array.isArray(parsed.deletedRows)
+			? parsed.deletedRows
+			: [],
 			updatedAt: parsed.updatedAt || null,
 		};
 	} catch {
@@ -88,6 +91,9 @@ export function writeEditDraft(type, accountId, draft) {
 			draft.pendingEdits && typeof draft.pendingEdits === "object"
 				? draft.pendingEdits
 				: {},
+		deletedRows: Array.isArray(draft.deletedRows)
+			? draft.deletedRows
+			: [],
 		updatedAt: new Date().toISOString(),
 	};
 	window.localStorage.setItem(

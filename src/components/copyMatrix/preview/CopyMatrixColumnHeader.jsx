@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, forwardRef } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Filter } from "lucide-react";
 import CopyMatrixColumnHeaderMenu from "./CopyMatrixColumnHeaderMenu";
 import { AUTO_ROW_ID_COLUMN } from "../../../utils/constants";
 
@@ -25,6 +25,9 @@ const CopyMatrixColumnHeader = forwardRef(
 			width,
 			onResizeStart,
 			onResizeAutoFit,
+			activeFilterValues,
+			onFilterValuesOpen,
+			sortDirection = "",
 		},
 		ref
 	) => {
@@ -34,13 +37,22 @@ const CopyMatrixColumnHeader = forwardRef(
 		const triggerRef = useRef(null);
 		const inputRef = useRef(null);
 		const canOpenMenu =
-			!readOnly && columnName !== AUTO_ROW_ID_COLUMN && !isRenaming;
+			columnName !== AUTO_ROW_ID_COLUMN && !isRenaming;
+		const hasActiveFilter = Array.isArray(activeFilterValues);
+		const hasActiveSort = Boolean(sortDirection);
+		const headerStateClass = isHighlighted || isRenaming
+			? "bg-yellow-100"
+			: hasActiveFilter
+			? "bg-violet-100"
+			: "bg-gray-50";
 
 		useEffect(() => {
 			if (!isRenaming) return;
-			setRenameValue(columnName);
-			setRenameError("");
-			const t = setTimeout(() => inputRef.current?.focus(), 0);
+			const t = setTimeout(() => {
+				setRenameValue(columnName);
+				setRenameError("");
+				inputRef.current?.focus();
+			}, 0);
 			return () => clearTimeout(t);
 		}, [isRenaming, columnName]);
 
@@ -82,7 +94,7 @@ const CopyMatrixColumnHeader = forwardRef(
 				}
 				className={`relative px-3 py-3 font-medium text-xs whitespace-nowrap sticky top-0 border-b border-gray-200 ${
 					menuOpen || isRenaming ? "z-[200]" : "z-20"
-				} ${isHighlighted || isRenaming ? "bg-yellow-100" : "bg-gray-50"} ${
+				} ${headerStateClass} ${
 					isSticky ? stickyClassName : ""
 				}`}
 			>
@@ -133,11 +145,35 @@ const CopyMatrixColumnHeader = forwardRef(
 							aria-expanded={menuOpen}
 							aria-haspopup="menu"
 						>
-							<span className="truncate">{columnName}</span>
+							<span
+								className={`truncate ${
+									hasActiveFilter
+										? "font-semibold text-violet-800"
+										: ""
+								}`}
+								title={
+									hasActiveFilter
+										? "Filter applied to this column"
+										: columnName
+								}
+							>
+								{columnName}
+							</span>
+							{hasActiveFilter && (
+								<Filter
+									size={12}
+									className="shrink-0 text-violet-700"
+									aria-label="Filter applied"
+								/>
+							)}
 							{canOpenMenu && (
 								<ChevronDown
 									size={14}
-									className={`shrink-0 text-gray-400 transition-transform ${
+									className={`shrink-0 transition-transform ${
+										hasActiveFilter || hasActiveSort
+											? "text-violet-600"
+											: "text-gray-400"
+									} ${
 										menuOpen ? "rotate-180" : ""
 									}`}
 								/>
@@ -145,12 +181,15 @@ const CopyMatrixColumnHeader = forwardRef(
 						</button>
 
 						<CopyMatrixColumnHeaderMenu
+							key={`${columnName}-${menuOpen ? "open" : "closed"}`}
 							isOpen={menuOpen}
 							onClose={() => setMenuOpen(false)}
 							columnName={columnName}
 							anchorRef={triggerRef}
 							onAction={onAction}
 							canRenameDelete={canRenameDelete}
+							readOnly={readOnly}
+							onFilterValuesOpen={onFilterValuesOpen}
 						/>
 					</div>
 				)}

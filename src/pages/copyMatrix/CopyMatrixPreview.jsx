@@ -9,12 +9,14 @@ import {
 } from "../../components/navigation/HeaderActions";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import EditableSheetTable from "../../components/common/EditableSheetTable";
+import ColumnValueFilterPanel from "../../components/common/ColumnValueFilterPanel";
 import OperationProgressOverlay from "../../components/common/OperationProgressOverlay";
 import ValidatedNameInput from "../../components/common/ValidatedNameInput";
 import {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
 	useLazyGetCopyMatrixRowsQuery,
+	useLazyGetCopyMatrixColumnValuesQuery,
 	useDeleteCopyMatrixMutation,
 	useAddCopyMatrixRowMutation,
 	useDeleteCopyMatrixRowMutation,
@@ -70,6 +72,7 @@ import {
 	cellText,
 	selectTargetRows,
 	rowValues,
+	buildTemplateRowOverrides,
 } from "../../utils/localSheetEdits";
 
 const CopyMatrixPreview = () => {
@@ -85,6 +88,12 @@ const CopyMatrixPreview = () => {
 	const store = useStore();
 	const [page, setPage] = useState(1);
 	const [rowsPerPage, setRowsPerPage] = useState(10);
+	const [columnFilters, setColumnFilters] = useState({});
+	const [sortConfig, setSortConfig] = useState({
+		column: "",
+		direction: "",
+	});
+	const [filterValues, setFilterValues] = useState([]);
 	const [name, setName] = useState("");
 	const [uniqueColumn, setUniqueColumn] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
@@ -108,6 +117,7 @@ const CopyMatrixPreview = () => {
 	const [selectedRowIds, setSelectedRowIds] = useState([]);
 	const [replaceStatusMessage, setReplaceStatusMessage] = useState(null);
 	const [replacePanel, setReplacePanel] = useState(null);
+	const [filterPanel, setFilterPanel] = useState(null);
 	const [findMatchIndex, setFindMatchIndex] = useState(0);
 	const [findMatches, setFindMatches] = useState([]);
 	const [findQuery, setFindQuery] = useState("");
@@ -168,10 +178,19 @@ const CopyMatrixPreview = () => {
 	} = useGetCopyMatrixQuery(id, { refetchOnMountOrArgChange: true });
 	const { data: rowsData, isLoading: isRowsLoading } =
 		useGetCopyMatrixRowsQuery(
-			{ id, page, limit: rowsPerPage },
+			{
+				id,
+				page,
+				limit: rowsPerPage,
+				filters: columnFilters,
+				sortColumn: sortConfig.column,
+				sortDirection: sortConfig.direction,
+			},
 			{ skip: !id }
 		);
 	const [fetchRowsPage] = useLazyGetCopyMatrixRowsQuery();
+	const [fetchColumnValues, { isFetching: isLoadingFilterValues }] =
+		useLazyGetCopyMatrixColumnValuesQuery();
 	const { data: allRowsData } = useGetCopyMatrixRowsQuery(
 		{ id, page: 1, limit: 200 },
 		{ skip: !id || sheetModal !== "cloneRow" }
@@ -259,25 +278,33 @@ const CopyMatrixPreview = () => {
 	 * patches so uniqueness validation sees exactly what the table shows.
 	 */
 	const getOperationRows = useCallback(async () => {
-		const total = Number(pagination.total || rows.length);
-		if (!id || total <= rows.length) return rows;
+		if (!id) return rows;
 
+		const firstPage = await fetchRowsPage(
+			{ id, page: 1, limit: 200 },
+			false
+		).unwrap();
+		const total = Number(
+			firstPage?.pagination?.total ||
+				firstPage?.rows?.length ||
+				rows.length
+		);
 		const pageCount = Math.max(1, Math.ceil(total / 200));
-		const pages = await Promise.all(
-			Array.from({ length: pageCount }, (_, index) =>
+		const remainingPages = await Promise.all(
+			Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) =>
 				fetchRowsPage(
-					{ id, page: index + 1, limit: 200 },
+					{ id, page: index + 2, limit: 200 },
 					false
 				).unwrap()
 			)
 		);
-		return pages
+		return [firstPage, ...remainingPages]
 			.flatMap((result) => result?.rows || [])
 			.map((row) => ({
 				...row,
 				...(pendingEditsRef.current[String(row._id)] || {}),
 			}));
-	}, [fetchRowsPage, id, pagination.total, rows]);
+	}, [fetchRowsPage, id, rows]);
 
 	const matrixReady =
 		!isMatrixLoading && !isMatrixFetching && Boolean(matrix);
@@ -762,10 +789,53 @@ const CopyMatrixPreview = () => {
 		clearRowSelection();
 	};
 
+	const handleFilterValuesOpen = async ({ columnName, anchorRect }) => {
+		setFilterPanel({ columnName, anchorRect });
+		setFilterValues([]);
+		try {
+			const result = await fetchColumnValues({
+				id,
+				column: columnName,
+			}).unwrap();
+			setFilterValues(result?.values || []);
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to load column filter values")
+			);
+		}
+	};
+
+	const handleFilterChange = (columnName, values) => {
+		setColumnFilters((current) => {
+			const next = { ...current };
+			if (values === null) delete next[columnName];
+			else next[columnName] = values;
+			return next;
+		});
+		setPage(1);
+		setSelectedRowIds([]);
+		tableRef.current?.clearSelection?.();
+	};
+
 	const handleColumnAction = async ({ action, columnName, anchorRect }) => {
-		if (readOnly || !columnName) return;
+		if (!columnName) return;
+		if (
+			readOnly &&
+			action !== "sort-asc" &&
+			action !== "sort-desc"
+		) {
+			return;
+		}
 
 		switch (action) {
+			case "sort-asc":
+				setSortConfig({ column: columnName, direction: "asc" });
+				setPage(1);
+				break;
+			case "sort-desc":
+				setSortConfig({ column: columnName, direction: "desc" });
+				setPage(1);
+				break;
 			case "sequence-number": {
 				try {
 					tableRef.current?.flushActiveEdit?.();
@@ -993,11 +1063,6 @@ const CopyMatrixPreview = () => {
 			}
 
 			if (alsoUpdate && targetColumn && template) {
-				const operationRows = await getOperationRows();
-				const targets = selectTargetRows(
-					operationRows,
-					selected.length ? selected : undefined
-				);
 				const applyResult = await applyColumnImages({
 					id,
 					targetColumn,
@@ -1005,10 +1070,11 @@ const CopyMatrixPreview = () => {
 					folder,
 					rowIds: selected.length ? selected : undefined,
 					dryRun: true,
-					rowSnapshots: targets.map((row) => ({
-						_id: row._id,
-						rowData: rowValues(row),
-					})),
+					rowOverrides: buildTemplateRowOverrides(
+						collectEdits(),
+						template,
+						selected
+					),
 				}).unwrap();
 				const patches = (applyResult?.updates || []).map((u) => ({
 					rowId: String(u.rowId),
@@ -1049,11 +1115,6 @@ const CopyMatrixPreview = () => {
 		try {
 			tableRef.current?.flushActiveEdit?.();
 			const selected = getSelectedRowIds().map(String);
-			const operationRows = await getOperationRows();
-			const targets = selectTargetRows(
-				operationRows,
-				selected.length ? selected : undefined
-			);
 			const result = await applyColumnImages({
 				id,
 				targetColumn,
@@ -1061,11 +1122,18 @@ const CopyMatrixPreview = () => {
 				folder,
 				rowIds: selected.length ? selected : undefined,
 				dryRun: true,
-				rowSnapshots: targets.map((row) => ({
-					_id: row._id,
-					rowData: rowValues(row),
-				})),
+				rowOverrides: buildTemplateRowOverrides(
+					collectEdits(),
+					template,
+					selected
+				),
 			}).unwrap();
+			if (!result?.updates?.length) {
+				showWarning(
+					"No matching image names found for values in the selected column."
+				);
+				return;
+			}
 			const patches = (result?.updates || []).map((u) => ({
 				rowId: String(u.rowId),
 				rowData: { [targetColumn]: u.url },
@@ -1933,7 +2001,7 @@ const CopyMatrixPreview = () => {
 						hideRowIdColumn ? [AUTO_ROW_ID_COLUMN] : []
 					}
 					selectableRows={!readOnly}
-					columnMenus={!readOnly}
+					columnMenus
 					canRenameDeleteColumns={canModifyColumnStructure}
 					renamingColumn={renamingColumn}
 					onColumnRenameSubmit={handleColumnRenameSubmit}
@@ -1941,6 +2009,9 @@ const CopyMatrixPreview = () => {
 					selectedRowIds={selectedRowIds}
 					onSelectedRowIdsChange={setSelectedRowIds}
 					onColumnAction={handleColumnAction}
+					columnFilters={columnFilters}
+					sortConfig={sortConfig}
+					onFilterValuesOpen={handleFilterValuesOpen}
 					onRowEdit={handleEditRow}
 					onRowCopy={handleCopyRow}
 					onRowDelete={handleDeleteRow}
@@ -2087,6 +2158,38 @@ const CopyMatrixPreview = () => {
 					pendingFindFocusRef.current = null;
 					clearRowSelection();
 				}}
+			/>
+
+			<ColumnValueFilterPanel
+				key={filterPanel?.columnName || "closed"}
+				isOpen={Boolean(filterPanel?.columnName)}
+				columnName={filterPanel?.columnName}
+				anchorRect={filterPanel?.anchorRect}
+				values={filterValues}
+				activeValues={
+					filterPanel?.columnName
+						? columnFilters[filterPanel.columnName]
+						: undefined
+				}
+				isLoading={isLoadingFilterValues}
+				sortDirection={
+					sortConfig.column === filterPanel?.columnName
+						? sortConfig.direction
+						: ""
+				}
+				onSort={(direction) => {
+					setSortConfig({
+						column: filterPanel.columnName,
+						direction,
+					});
+					setPage(1);
+				}}
+				onApply={(values) => {
+					handleFilterChange(filterPanel.columnName, values);
+					setFilterPanel(null);
+				}}
+				onCancel={() => setFilterPanel(null)}
+				onClose={() => setFilterPanel(null)}
 			/>
 
 			<ConfirmDialog

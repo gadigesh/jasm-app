@@ -9,6 +9,8 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import AssetSourceList from "./pages/assetSources/AssetSourceList";
 import AssetSourcePreviewRoute from "./pages/assetSources/AssetSourcePreviewRoute";
+import AssetSourceCreatedSuccess from "./pages/assetSources/AssetSourceCreatedSuccess";
+import AssetSourceReviewChanges from "./pages/assetSources/AssetSourceReviewChanges";
 import CopyMatrixList from "./pages/copyMatrix/CopyMatrixList";
 import CopyMatrixPreview from "./pages/copyMatrix/CopyMatrixPreview";
 import CopyMatrixWorkflow from "./pages/copyMatrix/CopyMatrixWorkflow";
@@ -40,6 +42,14 @@ function AppContent() {
 						<Route
 							path="asset-sources/:id/preview"
 							element={<AssetSourcePreviewRoute />}
+						/>
+						<Route
+							path="asset-sources/:id/success"
+							element={<AssetSourceCreatedSuccess />}
+						/>
+						<Route
+							path="asset-sources/:id/review"
+							element={<AssetSourceReviewChanges />}
 						/>
 						<Route
 							path="asset-sources"

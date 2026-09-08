@@ -43,12 +43,37 @@ const assetUpload = api.injectEndpoints({
 		}),
 
 		getAssetSourceRows: builder.query({
-			query: ({ id, page = 1, limit = 50 }) =>
-				`/source/${id}/rows?page=${page}&limit=${limit}`,
+			query: ({
+				id,
+				page = 1,
+				limit = 50,
+				filters = {},
+				sortColumn = "",
+				sortDirection = "",
+			}) => {
+				const params = new URLSearchParams({
+					page: String(page),
+					limit: String(limit),
+				});
+				if (Object.keys(filters || {}).length > 0) {
+					params.set("filters", JSON.stringify(filters));
+				}
+				if (sortColumn) params.set("sortColumn", sortColumn);
+				if (sortDirection) params.set("sortDirection", sortDirection);
+				return `/source/${id}/rows?${params.toString()}`;
+			},
 			transformResponse: (response) => response.data,
 			providesTags: (_result, _error, { id }) => [
 				{ type: "AssetSourceRows", id },
 			],
+		}),
+
+		getAssetSourceColumnValues: builder.query({
+			query: ({ id, column }) =>
+				`/source/${id}/rows/values?column=${encodeURIComponent(
+					column
+				)}`,
+			transformResponse: (response) => response.data,
 		}),
 
 		updateAssetSourceRows: builder.mutation({
@@ -88,6 +113,18 @@ const assetUpload = api.injectEndpoints({
 				{ type: "AssetSourceRows", id },
 				{ type: "CopyMatrices", id: "LIST" },
 				"CopyMatrices",
+			],
+		}),
+
+		createAssetSourceGoogleSheet: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}/google-sheet`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, id) => [
+				{ type: "AssetUploads", id },
+				{ type: "AssetUploads", id: "LIST" },
 			],
 		}),
 
@@ -212,10 +249,11 @@ const assetUpload = api.injectEndpoints({
 				Array.isArray(rowIds) && rowIds.length > 0
 					? [
 							"MindshareFolders",
+							"MindshareAssets",
 							{ type: "AssetSourceRows", id },
 							"AssetUploads",
 					  ]
-					: ["MindshareFolders"],
+					: ["MindshareFolders", "MindshareAssets"],
 		}),
 
 		setAssetSourceColumnCdnUrl: builder.mutation({
@@ -240,23 +278,25 @@ const assetUpload = api.injectEndpoints({
 			query: ({
 				id,
 				targetColumn,
+				targetColumns,
 				prefixColumn,
 				template,
 				folder,
 				rowIds,
 				dryRun,
-				rowSnapshots,
+				rowOverrides,
 			}) => ({
 				url: `/source/${id}/columns/update-images/apply`,
 				method: "POST",
 				body: {
 					targetColumn,
+					targetColumns,
 					prefixColumn,
 					template,
 					folder,
 					rowIds,
 					dryRun,
-					rowSnapshots,
+					rowOverrides,
 				},
 			}),
 			transformResponse: (response) => response.data,
@@ -453,9 +493,11 @@ export const {
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
 	useLazyGetAssetSourceRowsQuery,
+	useLazyGetAssetSourceColumnValuesQuery,
 	useUpdateAssetSourceRowsMutation,
 	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,
+	useCreateAssetSourceGoogleSheetMutation,
 	useDeleteAssetSourceMutation,
 	useCloneAssetSourceMutation,
 	useRetryUploadMutation,

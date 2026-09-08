@@ -1,5 +1,11 @@
 import React, { useRef, useState } from "react";
-import { ImagePlus, Plus, MoreHorizontal } from "lucide-react";
+import {
+	ImagePlus,
+	Plus,
+	MoreHorizontal,
+	Redo2,
+	Undo2,
+} from "lucide-react";
 import CopyMatrixMoreOptionsMenu from "./CopyMatrixMoreOptionsMenu";
 
 const toolbarBtnClass =
@@ -7,6 +13,10 @@ const toolbarBtnClass =
 
 const CopyMatrixSheetToolbar = ({
 	disabled = false,
+	onUndo,
+	onRedo,
+	canUndo = false,
+	canRedo = false,
 	onUpdateImages,
 	onAddRow,
 	onAddColumn,
@@ -18,6 +28,31 @@ const CopyMatrixSheetToolbar = ({
 
 	return (
 		<div className="flex items-center gap-2">
+			{onUndo && (
+				<button
+					type="button"
+					title="Undo recent AS change"
+					aria-label="Undo recent AS change"
+					disabled={disabled || !canUndo}
+					onClick={onUndo}
+					className={`${toolbarBtnClass} !px-2.5`}
+				>
+					<Undo2 size={16} />
+				</button>
+			)}
+			{onRedo && (
+				<button
+					type="button"
+					title="Redo recent AS change"
+					aria-label="Redo recent AS change"
+					disabled={disabled || !canRedo}
+					onClick={onRedo}
+					className={`${toolbarBtnClass} !px-2.5`}
+				>
+					<Redo2 size={16} />
+				</button>
+			)}
+
 			{onUpdateImages && (
 				<button
 					type="button"

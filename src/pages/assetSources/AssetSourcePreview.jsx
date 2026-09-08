@@ -13,11 +13,13 @@ import {
 	CancelButton,
 } from "../../components/navigation/HeaderActions";
 import EditableSheetTable from "../../components/common/EditableSheetTable";
+import ColumnValueFilterPanel from "../../components/common/ColumnValueFilterPanel";
 import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 import {
 	useGetAssetSourceQuery,
 	useGetAssetSourceRowsQuery,
 	useLazyGetAssetSourceRowsQuery,
+	useLazyGetAssetSourceColumnValuesQuery,
 	useUpdateAssetSourceRowsMutation,
 	useCheckAssetSourceUniqueColumnMutation,
 	useFinishAssetSourceMutation,
@@ -59,6 +61,7 @@ import {
 	cellText,
 	selectTargetRows,
 	rowValues,
+	buildTemplateRowOverrides,
 } from "../../utils/localSheetEdits";
 import { normalizeCellText } from "../../utils/normalizeCellText";
 import { suggestCloneColumnName } from "../../utils/copyMatrixColumnHelpers";
@@ -83,6 +86,21 @@ const isGenericAssetSourceName = (value) =>
 			.toLowerCase()
 	);
 
+const isImageTargetColumn = (value) => {
+	const column = String(value || "").trim();
+	const hasImageName =
+		/image/i.test(column) && !/^image$/i.test(column);
+	const hasSizedBackground =
+		/(?:^|[^a-z0-9])bg[12](?:$|[^a-z0-9])/i.test(column) &&
+		/\d{2,5}\s*(?:x|×|by|[-_])\s*\d{2,5}/i.test(column);
+	return hasImageName || hasSizedBackground;
+};
+
+const REVIEW_STORAGE_PREFIX = "jasm:asset-source-review:";
+
+const clonePendingEdits = (value) =>
+	JSON.parse(JSON.stringify(value && typeof value === "object" ? value : {}));
+
 const AssetSourcePreview = ({ readOnly = false }) => {
 	const { id } = useParams();
 	const navigate = useNavigate();
@@ -96,10 +114,24 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const [page, setPage] = useState(1);
 	const [rowsPerPage, setRowsPerPage] = useState(10);
+	const [columnFilters, setColumnFilters] = useState({});
+	const [sortConfig, setSortConfig] = useState({
+		column: "",
+		direction: "",
+	});
+	const [filterValues, setFilterValues] = useState([]);
 	const [name, setName] = useState("");
 	const [pendingEdits, setPendingEdits] = useState({});
+	const [isPreparingReview, setIsPreparingReview] = useState(false);
 	const hasSavedChangesRef = useRef(false);
 	const pendingEditsRef = useRef({});
+	const deletedRowsRef = useRef([]);
+	const editUndoHistoryRef = useRef([]);
+	const editRedoHistoryRef = useRef([]);
+	const [editHistoryCounts, setEditHistoryCounts] = useState({
+		undo: 0,
+		redo: 0,
+	});
 	const [nameValidation, setNameValidation] = useState({
 		isDuplicate: false,
 		isChecking: false,
@@ -117,6 +149,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const [highlightedRowId, setHighlightedRowId] = useState(null);
 	const [duplicateHighlight, setDuplicateHighlight] = useState(null);
 	const [replacePanel, setReplacePanel] = useState(null);
+	const [filterPanel, setFilterPanel] = useState(null);
 	const [replaceStatusMessage, setReplaceStatusMessage] = useState(null);
 	const [findMatchIndex, setFindMatchIndex] = useState(0);
 	const [findMatches, setFindMatches] = useState([]);
@@ -131,10 +164,19 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		isLoading: isRowsLoading,
 		refetch: refetchRows,
 	} = useGetAssetSourceRowsQuery(
-		{ id, page, limit: rowsPerPage },
+		{
+			id,
+			page,
+			limit: rowsPerPage,
+			filters: columnFilters,
+			sortColumn: sortConfig.column,
+			sortDirection: sortConfig.direction,
+		},
 		{ skip: !id, refetchOnMountOrArgChange: true }
 	);
 	const [fetchRowsPage] = useLazyGetAssetSourceRowsQuery();
+	const [fetchColumnValues, { isFetching: isLoadingFilterValues }] =
+		useLazyGetAssetSourceColumnValuesQuery();
 	const { data: allRowsData } = useGetAssetSourceRowsQuery(
 		{ id, page: 1, limit: 200 },
 		{ skip: !id || sheetModal !== "cloneRow" }
@@ -190,6 +232,84 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		[readOnly, syncedColumnNames, localUnsyncedColumns]
 	);
 
+	const syncEditHistoryCounts = useCallback(() => {
+		setEditHistoryCounts({
+			undo: editUndoHistoryRef.current.length,
+			redo: editRedoHistoryRef.current.length,
+		});
+	}, []);
+
+	const clearEditHistory = useCallback(() => {
+		editUndoHistoryRef.current = [];
+		editRedoHistoryRef.current = [];
+		syncEditHistoryCounts();
+	}, [syncEditHistoryCounts]);
+
+	const recordPendingEditState = useCallback(
+		(next) => {
+			const current = pendingEditsRef.current || {};
+			if (JSON.stringify(current) === JSON.stringify(next)) return false;
+			editUndoHistoryRef.current = [
+				...editUndoHistoryRef.current,
+				clonePendingEdits(current),
+			].slice(-5);
+			editRedoHistoryRef.current = [];
+			const snapshot = clonePendingEdits(next);
+			pendingEditsRef.current = snapshot;
+			setPendingEdits(snapshot);
+			syncEditHistoryCounts();
+			return true;
+		},
+		[syncEditHistoryCounts]
+	);
+
+	const handleEditUndo = useCallback(() => {
+		const previous = editUndoHistoryRef.current.pop();
+		if (!previous) return;
+		editRedoHistoryRef.current = [
+			...editRedoHistoryRef.current,
+			clonePendingEdits(pendingEditsRef.current),
+		].slice(-5);
+		pendingEditsRef.current = clonePendingEdits(previous);
+		setPendingEdits(pendingEditsRef.current);
+		syncEditHistoryCounts();
+	}, [syncEditHistoryCounts]);
+
+	const handleEditRedo = useCallback(() => {
+		const next = editRedoHistoryRef.current.pop();
+		if (!next) return;
+		editUndoHistoryRef.current = [
+			...editUndoHistoryRef.current,
+			clonePendingEdits(pendingEditsRef.current),
+		].slice(-5);
+		pendingEditsRef.current = clonePendingEdits(next);
+		setPendingEdits(pendingEditsRef.current);
+		syncEditHistoryCounts();
+	}, [syncEditHistoryCounts]);
+
+	useEffect(() => {
+		const handleHistoryShortcut = (event) => {
+			if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.repeat) {
+				return;
+			}
+
+			const key = event.key.toLowerCase();
+			if (key === "z" && !event.shiftKey) {
+				event.preventDefault();
+				tableRef.current?.flushActiveEdit?.();
+				handleEditUndo();
+			} else if (key === "y") {
+				event.preventDefault();
+				tableRef.current?.flushActiveEdit?.();
+				handleEditRedo();
+			}
+		};
+
+		window.addEventListener("keydown", handleHistoryShortcut, true);
+		return () =>
+			window.removeEventListener("keydown", handleHistoryShortcut, true);
+	}, [handleEditRedo, handleEditUndo]);
+
 	const columns = useMemo(
 		() => rowsData?.columns || asset?.columns || [],
 		[rowsData, asset]
@@ -228,25 +348,60 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	 * visible page. Pending local edits are overlaid before values are derived.
 	 */
 	const getOperationRows = useCallback(async () => {
-		const total = Number(pagination.total || rows.length);
-		if (!id || total <= rows.length) return rows;
+		if (!id) return rows;
 
+		const firstPage = await fetchRowsPage(
+			{ id, page: 1, limit: 200 },
+			false
+		).unwrap();
+		const total = Number(
+			firstPage?.pagination?.total ||
+				firstPage?.rows?.length ||
+				rows.length
+		);
 		const pageCount = Math.max(1, Math.ceil(total / 200));
-		const pages = await Promise.all(
-			Array.from({ length: pageCount }, (_, index) =>
+		const remainingPages = await Promise.all(
+			Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) =>
 				fetchRowsPage(
-					{ id, page: index + 1, limit: 200 },
+					{ id, page: index + 2, limit: 200 },
 					false
 				).unwrap()
 			)
 		);
-		return pages
+		return [firstPage, ...remainingPages]
 			.flatMap((result) => result?.rows || [])
 			.map((row) => ({
 				...row,
 				...(pendingEditsRef.current[String(row._id)] || {}),
 			}));
-	}, [fetchRowsPage, id, pagination.total, rows]);
+	}, [fetchRowsPage, id, rows]);
+
+	const getOriginalRowsForReview = useCallback(async () => {
+		const visibleRows = rowsData?.rows || [];
+		if (!id) return visibleRows;
+
+		const firstPage = await fetchRowsPage(
+			{ id, page: 1, limit: 200 },
+			false
+		).unwrap();
+		const total = Number(
+			firstPage?.pagination?.total ||
+				firstPage?.rows?.length ||
+				visibleRows.length
+		);
+		const pageCount = Math.max(1, Math.ceil(total / 200));
+		const remainingPages = await Promise.all(
+			Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) =>
+				fetchRowsPage(
+					{ id, page: index + 2, limit: 200 },
+					false
+				).unwrap()
+			)
+		);
+		return [firstPage, ...remainingPages].flatMap(
+			(result) => result?.rows || []
+		);
+	}, [fetchRowsPage, id, rowsData?.rows]);
 
 	const { data: meData } = useGetMeQuery();
 	const accountId = String(
@@ -280,7 +435,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		(requireNewAssetSourceName || deletedAssetSourceNames.length > 0);
 	const displayName = name;
 	const loading = isAssetLoading || isRowsLoading;
-	const isBusy = isFinishing || isSaving;
+	const isBusy = isFinishing || isSaving || isPreparingReview;
 	const canFinishDraft =
 		isDraft &&
 		displayName.trim().length > 0 &&
@@ -302,19 +457,24 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		setName("");
 		setPendingEdits({});
 		pendingEditsRef.current = {};
+		deletedRowsRef.current = [];
+		clearEditHistory();
 		setPage(1);
 		setSelectedRowIds([]);
 		setSheetModal(null);
 		setColumnModal(null);
 		setReplacePanel(null);
 		setRenamingColumn(null);
-	}, [id]);
+	}, [id, clearEditHistory]);
 
 	// Resume locally saved cell edits (create draft or completed).
 	useEffect(() => {
 		if (!accountId || !id || skipEditDraft) return;
 		const draft = readEditDraft("as", accountId, { entityId: id });
 		if (!draft || String(draft._id) !== String(id)) return;
+		deletedRowsRef.current = Array.isArray(draft.deletedRows)
+			? draft.deletedRows
+			: [];
 		const pending = draft.pendingEdits || {};
 		if (Object.keys(pending).length === 0) return;
 		pendingEditsRef.current = pending;
@@ -373,17 +533,15 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				...rowData,
 			},
 		};
-		pendingEditsRef.current = next;
-		setPendingEdits(next);
-	}, []);
+		recordPendingEditState(next);
+	}, [recordPendingEditState]);
 
 	const commitLocalPatches = useCallback((patches) => {
 		if (!patches?.length) return 0;
 		const next = applyRowPatches(pendingEditsRef.current, patches);
-		pendingEditsRef.current = next;
-		setPendingEdits(next);
+		recordPendingEditState(next);
 		return patches.length;
-	}, []);
+	}, [recordPendingEditState]);
 
 	useEffect(() => {
 		pendingEditsRef.current = pendingEdits;
@@ -400,6 +558,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				name: name.trim() || asset?.name || "Untitled",
 				isCreateDraft: Boolean(isDraft),
 				pendingEdits: pendingEditsRef.current || {},
+				deletedRows: deletedRowsRef.current || [],
 			});
 		}, 400);
 		return () => window.clearTimeout(timer);
@@ -422,6 +581,65 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			return { _id: rowId, rowData };
 		});
 	}, []);
+
+	const buildReviewChanges = useCallback(
+		async (edits, deletedRows = []) => {
+			const originalRows = await getOriginalRowsForReview();
+			const originalById = new Map(
+				originalRows.map((row) => [String(row._id), row])
+			);
+			const changes = [];
+			const normalize = (value) =>
+				normalizeCellText(value == null ? "" : String(value));
+
+			for (const edit of edits) {
+				const original = originalById.get(String(edit._id));
+				for (const [column, updatedValue] of Object.entries(
+					edit.rowData || {}
+				)) {
+					const previous = normalize(original?.[column]);
+					const updated = normalize(updatedValue);
+					if (previous === updated) continue;
+
+					const status =
+						!previous && updated
+							? "Added"
+							: previous && !updated
+							? "Removed"
+							: "Modified";
+					changes.push({
+						rowId: String(edit._id),
+						rowNumber:
+							original?.rowIndex ??
+							original?.primaryKey ??
+							String(edit._id),
+						column,
+						previousValue: previous,
+						updatedValue: updated,
+						status,
+					});
+				}
+			}
+			for (const deletedRow of deletedRows) {
+				const summary = Object.entries(deletedRow.rowData || {})
+					.filter(([, value]) => String(value ?? "").trim())
+					.slice(0, 4)
+					.map(([column, value]) => `${column}: ${value}`)
+					.join(" · ");
+				changes.push({
+					rowId: String(deletedRow._id),
+					rowNumber: deletedRow.rowNumber,
+					column: "Entire row",
+					previousValue: summary || "Row data",
+					updatedValue: "Row deleted",
+					status: "Removed",
+					changeType: "row-delete",
+				});
+			}
+			return changes;
+		},
+		[getOriginalRowsForReview]
+	);
 
 	const validateUniqueColumn = useCallback(
 		async (edits = []) => {
@@ -503,21 +721,29 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const edits = collectEdits();
 		if (edits.length === 0) {
 			setPendingEdits({});
+			pendingEditsRef.current = {};
+			clearEditHistory();
 			return;
 		}
 		await validateUniqueColumn(edits);
 		await updateRows({ id, rows: edits }).unwrap();
 		setPendingEdits({});
+		pendingEditsRef.current = {};
+		clearEditHistory();
 	};
 
 	const flushPendingEditsForLeave = async () => {
 		const edits = collectEdits();
 		if (edits.length === 0) {
 			setPendingEdits({});
+			pendingEditsRef.current = {};
+			clearEditHistory();
 			return;
 		}
 		await updateRows({ id, rows: edits }).unwrap();
 		setPendingEdits({});
+		pendingEditsRef.current = {};
+		clearEditHistory();
 	};
 
 	const getSelectedRowIds = () =>
@@ -627,11 +853,37 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const handleDeleteRowConfirm = async () => {
 		if (!deletingRow?._id) return;
+		const deletedRow = {
+			_id: String(deletingRow._id),
+			rowNumber:
+				deletingRow.rowIndex ??
+				deletingRow.primaryKey ??
+				String(deletingRow._id),
+			primaryKey: deletingRow.primaryKey,
+			rowData: Object.fromEntries(
+				Object.entries(deletingRow).filter(
+					([key]) =>
+						!["_id", "rowIndex", "primaryKey"].includes(key)
+				)
+			),
+		};
 		try {
 			await deleteAssetSourceRow({
 				id,
 				rowId: deletingRow._id,
 			}).unwrap();
+			if (pendingEditsRef.current[deletedRow._id]) {
+				const nextPendingEdits = { ...pendingEditsRef.current };
+				delete nextPendingEdits[deletedRow._id];
+				pendingEditsRef.current = nextPendingEdits;
+				setPendingEdits(nextPendingEdits);
+			}
+			deletedRowsRef.current = [
+				...deletedRowsRef.current.filter(
+					(row) => row._id !== deletedRow._id
+				),
+				deletedRow,
+			];
 			setDeletingRow(null);
 			hasSavedChangesRef.current = true;
 			showSuccess("Row deleted");
@@ -687,7 +939,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	const cloneRowOptions = allRowsData?.rows || rows;
 
-	const goToAssetSourceList = () => {
+	const goToAssetSourceList = (destination = "/asset-sources") => {
 		if (accountId) {
 			clearEditDraft("as", accountId, { entityId: id });
 		}
@@ -701,13 +953,16 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				"CopyMatrices",
 			])
 		);
-		navigate("/asset-sources", { replace: true });
+		navigate(destination, { replace: true });
 	};
 
 	const handleSaveChanges = async () => {
+		if (isPreparingReview) return;
+		setIsPreparingReview(true);
 		try {
 			const edits = collectEdits();
-			if (edits.length === 0) {
+			const deletedRows = deletedRowsRef.current;
+			if (edits.length === 0 && deletedRows.length === 0) {
 				if (hasSavedChangesRef.current) {
 					await validateUniqueColumn([]);
 				}
@@ -720,12 +975,41 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				return;
 			}
 			await validateUniqueColumn(edits);
-			await updateRows({ id, rows: edits }).unwrap();
-			setPendingEdits({});
-			showSuccess("Changes saved");
-			goToAssetSourceList();
+			const review = {
+				edits,
+				changes: await buildReviewChanges(edits, deletedRows),
+				deletedRows,
+				assetName: displayName || asset?.name || "",
+				campaignName: asset?.copyMatrixName || "",
+			};
+			const pendingForReview = Object.fromEntries(
+				edits.map((edit) => [String(edit._id), edit.rowData])
+			);
+			if (accountId) {
+				writeEditDraft("as", accountId, {
+					_id: id,
+					name: displayName || asset?.name || "Untitled",
+					isCreateDraft: false,
+					pendingEdits: pendingForReview,
+					deletedRows,
+				});
+			}
+			try {
+				window.sessionStorage.setItem(
+					`${REVIEW_STORAGE_PREFIX}${id}`,
+					JSON.stringify(review)
+				);
+			} catch {
+				// The review page also receives the payload through navigation state.
+			}
+			navigate(`/asset-sources/${id}/review`, {
+				replace: true,
+				state: { review },
+			});
 		} catch (error) {
 			showError(getApiErrorMessage(error));
+		} finally {
+			setIsPreparingReview(false);
 		}
 	};
 
@@ -755,16 +1039,59 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			}).unwrap();
 
 			showSuccess(result?.message || "Asset source saved successfully");
-			goToAssetSourceList();
+			goToAssetSourceList(`/asset-sources/${id}/success`);
 		} catch (error) {
 			showError(getApiErrorMessage(error));
 		}
 	};
 
+	const handleFilterValuesOpen = async ({ columnName, anchorRect }) => {
+		setFilterPanel({ columnName, anchorRect });
+		setFilterValues([]);
+		try {
+			const result = await fetchColumnValues({
+				id,
+				column: columnName,
+			}).unwrap();
+			setFilterValues(result?.values || []);
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to load column filter values")
+			);
+		}
+	};
+
+	const handleFilterChange = (columnName, values) => {
+		setColumnFilters((current) => {
+			const next = { ...current };
+			if (values === null) delete next[columnName];
+			else next[columnName] = values;
+			return next;
+		});
+		setPage(1);
+		setSelectedRowIds([]);
+		tableRef.current?.clearSelection?.();
+	};
+
 	const handleColumnAction = async ({ action, columnName, anchorRect }) => {
-		if (readOnly || !columnName) return;
+		if (!columnName) return;
+		if (
+			readOnly &&
+			action !== "sort-asc" &&
+			action !== "sort-desc"
+		) {
+			return;
+		}
 
 		switch (action) {
+			case "sort-asc":
+				setSortConfig({ column: columnName, direction: "asc" });
+				setPage(1);
+				break;
+			case "sort-desc":
+				setSortConfig({ column: columnName, direction: "desc" });
+				setPage(1);
+				break;
 			case "sequence-number": {
 				try {
 					tableRef.current?.flushActiveEdit?.();
@@ -996,11 +1323,6 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			}
 
 			if (alsoUpdate && targetColumn && template) {
-				const operationRows = await getOperationRows();
-				const targets = selectTargetRows(
-					operationRows,
-					selected.length ? selected : undefined
-				);
 				const applyResult = await applyColumnImages({
 					id,
 					targetColumn,
@@ -1008,10 +1330,11 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					folder,
 					rowIds: selected.length ? selected : undefined,
 					dryRun: true,
-					rowSnapshots: targets.map((row) => ({
-						_id: row._id,
-						rowData: rowValues(row),
-					})),
+					rowOverrides: buildTemplateRowOverrides(
+						collectEdits(),
+						template,
+						selected
+					),
 				}).unwrap();
 				const patches = (applyResult?.updates || []).map((u) => ({
 					rowId: String(u.rowId),
@@ -1041,40 +1364,89 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					  } to asset library`
 					: "Images uploaded to asset library"
 			);
+			return result;
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to upload images"));
+			return null;
 		}
 	};
 
-	const handleApplyImages = async ({ template, folder }) => {
-		const targetColumn = columnModal?.column;
-		if (!targetColumn) return;
+	const handleApplyImages = async ({
+		template,
+		folder,
+		targetColumn: requestedTargetColumn,
+		referenceColumn,
+		targetColumns: requestedTargetColumns,
+	}) => {
+		const isAssetImagesPanel = sheetModal === "assetImages";
+		const referenceKey = String(referenceColumn || "")
+			.trim()
+			.toLowerCase();
+		const targetColumns = isAssetImagesPanel
+			? [
+					...new Set(
+						(Array.isArray(requestedTargetColumns)
+							? requestedTargetColumns
+							: columns
+									.filter(isImageTargetColumn)
+									.filter(
+										(column) =>
+											String(column || "")
+												.trim()
+												.toLowerCase() !== referenceKey
+									)
+						)
+							.map((column) => String(column || "").trim())
+							.filter(
+								(column) =>
+									column &&
+									isImageTargetColumn(column) &&
+									column.toLowerCase() !== referenceKey
+							)
+					),
+			  ]
+			: [requestedTargetColumn || columnModal?.column].filter(Boolean);
+		const targetColumn = targetColumns[0];
+		if (!targetColumn) {
+			showWarning(
+				"No image or sized BG columns are available to receive the URLs."
+			);
+			return;
+		}
 		try {
 			tableRef.current?.flushActiveEdit?.();
-			const selected = getSelectedRowIds().map(String);
-			const operationRows = await getOperationRows();
-			const targets = selectTargetRows(
-				operationRows,
-				selected.length ? selected : undefined
-			);
+			const selected = isAssetImagesPanel
+				? []
+				: getSelectedRowIds().map(String);
 			const result = await applyColumnImages({
 				id,
 				targetColumn,
+				targetColumns,
+				prefixColumn: referenceColumn,
 				template,
 				folder,
 				rowIds: selected.length ? selected : undefined,
 				dryRun: true,
-				rowSnapshots: targets.map((row) => ({
-					_id: row._id,
-					rowData: rowValues(row),
-				})),
+				rowOverrides: buildTemplateRowOverrides(
+					collectEdits(),
+					template,
+					selected
+				),
 			}).unwrap();
+			if (!result?.updates?.length) {
+				showWarning(
+					"No matching image names or size-specific assets found for values in the selected reference column."
+				);
+				return;
+			}
 			const patches = (result?.updates || []).map((u) => ({
 				rowId: String(u.rowId),
-				rowData: { [targetColumn]: u.url },
+				rowData: { [u.column || targetColumn]: u.url },
 			}));
 			const updated = commitLocalPatches(patches);
-			setHighlightedColumn(targetColumn);
+			setHighlightedColumn(
+				targetColumns.length === 1 ? targetColumns[0] : null
+			);
 			scheduleHighlightClear();
 			showSuccess(
 				`Updated ${updated} row${
@@ -1085,8 +1457,12 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 						: ""
 				}`
 			);
-			closeColumnModal();
-			clearRowSelection();
+			if (isAssetImagesPanel) {
+				closeSheetModal();
+			} else {
+				closeColumnModal();
+				clearRowSelection();
+			}
 		} catch (error) {
 			showError(getApiErrorMessage(error, "Failed to apply images"));
 		}
@@ -1438,6 +1814,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					name: name.trim() || asset?.name || "Untitled",
 					isCreateDraft: isDraft,
 					pendingEdits: pendingMap,
+					deletedRows: deletedRowsRef.current || [],
 				});
 			}
 			setPendingEdits({});
@@ -1484,6 +1861,8 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 												: "Finish"
 											: isSaving
 											? "Saving..."
+										: isPreparingReview
+										? "Preparing review..."
 											: "Save changes"
 									}
 									onClick={
@@ -1590,6 +1969,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 									isAddingRow ||
 									isAddingColumn
 								}
+								onUndo={handleEditUndo}
+								onRedo={handleEditRedo}
+								canUndo={editHistoryCounts.undo > 0}
+								canRedo={editHistoryCounts.redo > 0}
 								onUpdateImages={() => setSheetModal("assetImages")}
 								onAddRow={handleAddRow}
 								onAddColumn={() => setSheetModal("addColumn")}
@@ -1619,11 +2002,14 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					readOnly={readOnly}
 					readOnlyColumns={[AUTO_ROW_ID_COLUMN]}
 					selectableRows={!readOnly}
-					columnMenus={!readOnly}
+					columnMenus
 					canRenameDeleteColumns={canModifyColumnStructure}
 					selectedRowIds={selectedRowIds}
 					onSelectedRowIdsChange={setSelectedRowIds}
 					onColumnAction={handleColumnAction}
+					columnFilters={columnFilters}
+					sortConfig={sortConfig}
+					onFilterValuesOpen={handleFilterValuesOpen}
 					onRowEdit={handleEditRow}
 					onRowCopy={handleCopyRow}
 					onRowDelete={handleDeleteRow}
@@ -1645,6 +2031,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			<AssetSourceImagesModal
 				isOpen={sheetModal === "assetImages"}
 				onClose={closeSheetModal}
+				onUpload={handleUploadImages}
+				onApply={handleApplyImages}
+				isUploading={isUploadingImages}
+				isApplying={isApplyingImages}
 				accountId={accountId}
 				columns={columns}
 				folders={imageFoldersData?.folders || []}
@@ -1790,6 +2180,38 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					pendingFindFocusRef.current = null;
 					clearRowSelection();
 				}}
+			/>
+
+			<ColumnValueFilterPanel
+				key={filterPanel?.columnName || "closed"}
+				isOpen={Boolean(filterPanel?.columnName)}
+				columnName={filterPanel?.columnName}
+				anchorRect={filterPanel?.anchorRect}
+				values={filterValues}
+				activeValues={
+					filterPanel?.columnName
+						? columnFilters[filterPanel.columnName]
+						: undefined
+				}
+				isLoading={isLoadingFilterValues}
+				sortDirection={
+					sortConfig.column === filterPanel?.columnName
+						? sortConfig.direction
+						: ""
+				}
+				onSort={(direction) => {
+					setSortConfig({
+						column: filterPanel.columnName,
+						direction,
+					});
+					setPage(1);
+				}}
+				onApply={(values) => {
+					handleFilterChange(filterPanel.columnName, values);
+					setFilterPanel(null);
+				}}
+				onCancel={() => setFilterPanel(null)}
+				onClose={() => setFilterPanel(null)}
 			/>
 
 			<ConfirmDialog

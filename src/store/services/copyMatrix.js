@@ -54,12 +54,37 @@ const copyMatrixApi = api.injectEndpoints({
 		}),
 
 		getCopyMatrixRows: builder.query({
-			query: ({ id, page = 1, limit = 50 }) =>
-				`/copy-matrix/${id}/rows?page=${page}&limit=${limit}`,
+			query: ({
+				id,
+				page = 1,
+				limit = 50,
+				filters = {},
+				sortColumn = "",
+				sortDirection = "",
+			}) => {
+				const params = new URLSearchParams({
+					page: String(page),
+					limit: String(limit),
+				});
+				if (Object.keys(filters || {}).length > 0) {
+					params.set("filters", JSON.stringify(filters));
+				}
+				if (sortColumn) params.set("sortColumn", sortColumn);
+				if (sortDirection) params.set("sortDirection", sortDirection);
+				return `/copy-matrix/${id}/rows?${params.toString()}`;
+			},
 			transformResponse: (response) => response.data,
 			providesTags: (_result, _error, { id }) => [
 				{ type: "CopyMatrixRows", id },
 			],
+		}),
+
+		getCopyMatrixColumnValues: builder.query({
+			query: ({ id, column }) =>
+				`/copy-matrix/${id}/rows/values?column=${encodeURIComponent(
+					column
+				)}`,
+			transformResponse: (response) => response.data,
 		}),
 
 		previewCopyMatrix: builder.mutation({
@@ -395,7 +420,7 @@ const copyMatrixApi = api.injectEndpoints({
 				folder,
 				rowIds,
 				dryRun,
-				rowSnapshots,
+				rowOverrides,
 			}) => ({
 				url: `/copy-matrix/${id}/columns/update-images/apply`,
 				method: "POST",
@@ -406,7 +431,7 @@ const copyMatrixApi = api.injectEndpoints({
 					folder,
 					rowIds,
 					dryRun,
-					rowSnapshots,
+					rowOverrides,
 				},
 			}),
 			transformResponse: (response) => response.data,
@@ -633,6 +658,7 @@ export const {
 	useGetCopyMatrixQuery,
 	useGetCopyMatrixRowsQuery,
 	useLazyGetCopyMatrixRowsQuery,
+	useLazyGetCopyMatrixColumnValuesQuery,
 	usePreviewCopyMatrixMutation,
 	useGetGsheetTabsMutation,
 	useFinishCopyMatrixMutation,

@@ -180,6 +180,7 @@ const CopyMatrixSelectDateModal = ({
 	const [timezoneId, setTimezoneId] = useState(getDefaultTimezoneId);
 	const [viewYear, setViewYear] = useState(now.getFullYear());
 	const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
+	const [calendarView, setCalendarView] = useState("days");
 	const [showCalendar, setShowCalendar] = useState(false);
 	const [timeMenu, setTimeMenu] = useState(null);
 	const [position, setPosition] = useState({ top: 96, left: 96 });
@@ -203,6 +204,7 @@ const CopyMatrixSelectDateModal = ({
 		setTimezoneId(getDefaultTimezoneId());
 		setViewYear(n.getFullYear());
 		setViewMonth(n.getMonth() + 1);
+		setCalendarView("days");
 		setShowCalendar(false);
 		setTimeMenu(null);
 	}, [isOpen, columnName]);
@@ -324,6 +326,18 @@ const CopyMatrixSelectDateModal = ({
 		setViewYear(y);
 	};
 
+	const shiftCalendar = (delta) => {
+		if (calendarView === "years") {
+			setViewYear((year) => year + delta * 10);
+			return;
+		}
+		if (calendarView === "months") {
+			setViewYear((year) => year + delta);
+			return;
+		}
+		shiftMonth(delta);
+	};
+
 	const apply = () => {
 		if (!preview) return;
 		onConfirm?.({
@@ -333,6 +347,11 @@ const CopyMatrixSelectDateModal = ({
 	};
 
 	const calendarDays = buildCalendarDays(viewYear, viewMonth);
+	const yearBatchStart = Math.floor(viewYear / 10) * 10;
+	const yearOptions = Array.from(
+		{ length: 10 },
+		(_, index) => yearBatchStart + index
+	);
 
 	return createPortal(
 		<div
@@ -391,10 +410,12 @@ const CopyMatrixSelectDateModal = ({
 								setViewMonth(p.month);
 							}
 							setTimeMenu(null);
+							setCalendarView("days");
 							setShowCalendar(true);
 						}}
 						onClick={() => {
 							setTimeMenu(null);
+							setCalendarView("days");
 							setShowCalendar(true);
 						}}
 						placeholder="MM-DD-YYYY"
@@ -430,54 +451,131 @@ const CopyMatrixSelectDateModal = ({
 						<div className="mb-2 flex items-center justify-between">
 							<button
 								type="button"
-								onClick={() => shiftMonth(-1)}
+								onClick={() => shiftCalendar(-1)}
 								className="rounded p-1 text-gray-500 hover:bg-gray-100"
 							>
 								<ChevronLeft size={16} />
 							</button>
-							<p className="text-sm font-semibold text-gray-800">
-								{MONTH_NAMES[viewMonth - 1]} {viewYear}
-							</p>
+							<div className="flex items-center gap-1 text-sm font-semibold text-gray-800">
+								{calendarView === "days" && (
+									<>
+										<button
+											type="button"
+											onClick={() => setCalendarView("months")}
+											className="rounded px-1.5 py-0.5 hover:bg-violet-50 hover:text-[#7C3AED]"
+										>
+											{MONTH_NAMES[viewMonth - 1]}
+										</button>
+										<button
+											type="button"
+											onClick={() => setCalendarView("years")}
+											className="rounded px-1.5 py-0.5 hover:bg-violet-50 hover:text-[#7C3AED]"
+										>
+											{viewYear}
+										</button>
+									</>
+								)}
+								{calendarView === "months" && (
+									<button
+										type="button"
+										onClick={() => setCalendarView("years")}
+										className="rounded px-1.5 py-0.5 hover:bg-violet-50 hover:text-[#7C3AED]"
+									>
+										{viewYear}
+									</button>
+								)}
+								{calendarView === "years" && (
+									<span>
+										{yearBatchStart}–{yearBatchStart + 9}
+									</span>
+								)}
+							</div>
 							<button
 								type="button"
-								onClick={() => shiftMonth(1)}
+								onClick={() => shiftCalendar(1)}
 								className="rounded p-1 text-gray-500 hover:bg-gray-100"
 							>
 								<ChevronRight size={16} />
 							</button>
 						</div>
-						<div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-gray-400">
-							{WEEKDAYS.map((d) => (
-								<span key={d}>{d}</span>
-							))}
-						</div>
-						<div className="grid grid-cols-7 gap-0.5 text-center">
-							{calendarDays.map((day, idx) => {
-								const isSelected =
-									day &&
-									parsedDate &&
-									parsedDate.year === viewYear &&
-									parsedDate.month === viewMonth &&
-									parsedDate.day === day;
-								return (
+						{calendarView === "days" && (
+							<>
+								<div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-gray-400">
+									{WEEKDAYS.map((d) => (
+										<span key={d}>{d}</span>
+									))}
+								</div>
+								<div className="grid grid-cols-7 gap-0.5 text-center">
+									{calendarDays.map((day, idx) => {
+										const isSelected =
+											day &&
+											parsedDate &&
+											parsedDate.year === viewYear &&
+											parsedDate.month === viewMonth &&
+											parsedDate.day === day;
+										return (
+											<button
+												key={idx}
+												type="button"
+												disabled={!day}
+												onClick={() => selectDay(day)}
+												className={`h-6 rounded text-[11px] ${
+													!day
+														? "cursor-default"
+														: isSelected
+														? "bg-blue-500 font-semibold text-white"
+														: "text-gray-700 hover:bg-blue-50"
+												}`}
+											>
+												{day || ""}
+											</button>
+										);
+									})}
+								</div>
+							</>
+						)}
+						{calendarView === "months" && (
+							<div className="grid grid-cols-3 gap-1">
+								{MONTH_NAMES.map((monthName, index) => (
 									<button
-										key={idx}
+										key={monthName}
 										type="button"
-										disabled={!day}
-										onClick={() => selectDay(day)}
-										className={`h-6 rounded text-[11px] ${
-											!day
-												? "cursor-default"
-												: isSelected
-												? "bg-blue-500 font-semibold text-white"
-												: "text-gray-700 hover:bg-blue-50"
+										onClick={() => {
+											setViewMonth(index + 1);
+											setCalendarView("days");
+										}}
+										className={`h-8 rounded text-[11px] font-medium ${
+											viewMonth === index + 1
+												? "bg-[#7C3AED] text-white"
+												: "text-gray-700 hover:bg-violet-50 hover:text-[#7C3AED]"
 										}`}
 									>
-										{day || ""}
+										{monthName.slice(0, 3)}
 									</button>
-								);
-							})}
-						</div>
+								))}
+							</div>
+						)}
+						{calendarView === "years" && (
+							<div className="grid grid-cols-5 gap-1">
+								{yearOptions.map((year) => (
+									<button
+										key={year}
+										type="button"
+										onClick={() => {
+											setViewYear(year);
+											setCalendarView("days");
+										}}
+										className={`h-9 rounded text-[11px] font-medium ${
+											viewYear === year
+												? "bg-[#7C3AED] text-white"
+												: "text-gray-700 hover:bg-violet-50 hover:text-[#7C3AED]"
+										}`}
+									>
+										{year}
+									</button>
+								))}
+							</div>
+						)}
 					</div>
 				)}
 

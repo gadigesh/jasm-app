@@ -22,32 +22,113 @@ import {
 import { AUTO_ROW_ID_COLUMN } from "../../../utils/constants";
 import { useGetMindshareAssetsQuery } from "../../../store/services/accounts";
 
-const tabClass = (active) =>
-	`border-b-2 px-1 pb-3 text-sm font-semibold transition-colors ${
-		active
-			? "border-[#7C3AED] text-[#7C3AED]"
-			: "border-transparent text-gray-500 hover:text-gray-800"
-	}`;
+const fileNameKey = (value) =>
+	String(value || "")
+		.split("/")
+		.pop()
+		.trim()
+		.toLowerCase();
+
+const isImageFile = (file) =>
+	String(file?.type || "").toLowerCase().startsWith("image/") ||
+	/\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(
+		String(file?.name || "")
+	);
+
+const isZipFile = (file) =>
+	/application\/(?:x-)?zip/i.test(String(file?.type || "")) ||
+	/\.zip$/i.test(String(file?.name || ""));
+
+const isImageTargetColumn = (column) => {
+	const value = String(column || "").trim();
+	const hasImageName = /image/i.test(value) && !/^image$/i.test(value);
+	const hasSizedBackground =
+		/(?:^|[^a-z0-9])bg[12](?:$|[^a-z0-9])/i.test(value) &&
+		/\d{2,5}\s*(?:x|×|by|[-_])\s*\d{2,5}/i.test(value);
+	return hasImageName || hasSizedBackground;
+};
 
 const AssetSourceImagesModal = ({
 	isOpen,
 	onClose,
+	onUpload,
+	onApply,
+	isUploading = false,
+	isApplying = false,
 	accountId,
 	columns = [],
 	folders = [],
 }) => {
-	const [activeTab, setActiveTab] = useState("upload");
 	const [referenceColumn, setReferenceColumn] = useState("");
 	const [folder, setFolder] = useState("");
+	const [folderMenuOpen, setFolderMenuOpen] = useState(false);
 	const [page, setPage] = useState(1);
 	const [search, setSearch] = useState("");
 	const [selectedFile, setSelectedFile] = useState(null);
+	const [validationMessage, setValidationMessage] = useState("");
+	// The dropdown displays "All folders" by default, so that is a valid
+	// folder scope even when its internal value is an empty string.
+	const [folderWasSelected, setFolderWasSelected] = useState(true);
+	const [recentUploads, setRecentUploads] = useState([]);
+	const [assetRefreshKey, setAssetRefreshKey] = useState(0);
 	const deferredSearch = useDeferredValue(search.trim());
 	const queryFolder = search.trim() ? "" : folder;
 	const panelRef = useRef(null);
+	const folderMenuRef = useRef(null);
+	const fileInputRef = useRef(null);
+	const recentUploadsRef = useRef([]);
 	const dragOffsetRef = useRef({ x: 0, y: 0 });
+	const referenceColumnRef = useRef("");
+	const folderRef = useRef("");
+	const folderWasSelectedRef = useRef(true);
+	const validationTimerRef = useRef(null);
 	const [position, setPosition] = useState(null);
 	const [isDragging, setIsDragging] = useState(false);
+	const folderOptions = useMemo(
+		() => [
+			...new Set(
+				["", ...folders, folder]
+					.map((value) => String(value || "").trim())
+					.filter((value, index) => index === 0 || value)
+			),
+		],
+		[folder, folders]
+	);
+
+	useEffect(() => {
+		recentUploadsRef.current = recentUploads;
+	}, [recentUploads]);
+
+	useEffect(
+		() => () => {
+			recentUploadsRef.current.forEach((file) =>
+				URL.revokeObjectURL(file.url)
+			);
+			if (validationTimerRef.current) {
+				clearTimeout(validationTimerRef.current);
+			}
+		},
+		[]
+	);
+
+	const clearValidationMessage = () => {
+		if (validationTimerRef.current) {
+			clearTimeout(validationTimerRef.current);
+			validationTimerRef.current = null;
+		}
+		setValidationMessage("");
+	};
+
+	const showValidationMessage = (message) => {
+		if (validationTimerRef.current) {
+			clearTimeout(validationTimerRef.current);
+		}
+		setValidationMessage(message);
+		validationTimerRef.current = setTimeout(() => {
+			setValidationMessage("");
+			validationTimerRef.current = null;
+		}, 45_000);
+	};
 
 	const availableColumns = useMemo(
 		() => columns.filter((column) => column !== AUTO_ROW_ID_COLUMN),
@@ -67,21 +148,39 @@ const AssetSourceImagesModal = ({
 			limit: 10,
 			folder: queryFolder,
 			search: deferredSearch,
+			refresh: assetRefreshKey,
 		},
 		{
-			skip: !isOpen || activeTab !== "preview" || !accountId,
+			skip: !isOpen || !accountId,
 			refetchOnMountOrArgChange: true,
 		}
 	);
-	const resultData =
-		currentImageData || (!isFetchingImages ? imageData : null);
+	// Keep the previous page visible while a new folder/search page loads.
+	const resultData = currentImageData || imageData;
 	const files = resultData?.assets || [];
 	const pagination = resultData?.pagination || {
 		page: 1,
 		total: 0,
 		totalPages: 1,
 	};
-	const displayedFiles = selectedFile ? [selectedFile] : files;
+	const recentFilesForPage = useMemo(() => {
+		if (page !== 1 || selectedFile) return [];
+		const query = search.trim().toLowerCase();
+		const serverNames = new Set(files.map((file) => fileNameKey(file.name)));
+		return recentUploads.filter((file) => {
+			if (!query && file.folder !== folder) return false;
+			if (serverNames.has(fileNameKey(file.name))) return false;
+			return (
+				!query ||
+				[file.name, file.mimeType, file.url].some((value) =>
+					String(value || "").toLowerCase().includes(query)
+				)
+			);
+		});
+	}, [files, folder, page, search, selectedFile, recentUploads]);
+	const displayedFiles = selectedFile
+		? [selectedFile]
+		: [...recentFilesForPage, ...files].slice(0, 10);
 	const displayedPagination = selectedFile
 		? { page: 1, total: 1, totalPages: 1 }
 		: pagination;
@@ -122,6 +221,17 @@ const AssetSourceImagesModal = ({
 		};
 	}, [isDragging]);
 
+	useEffect(() => {
+		if (!folderMenuOpen) return;
+		const closeFolderMenu = (event) => {
+			if (!folderMenuRef.current?.contains(event.target)) {
+				setFolderMenuOpen(false);
+			}
+		};
+		window.addEventListener("mousedown", closeFolderMenu);
+		return () => window.removeEventListener("mousedown", closeFolderMenu);
+	}, [folderMenuOpen]);
+
 	if (!isOpen) return null;
 
 	const startDragging = (event) => {
@@ -138,6 +248,47 @@ const AssetSourceImagesModal = ({
 		event.preventDefault();
 	};
 
+	const handleFileSelection = async (event) => {
+		const files = Array.from(event.target.files || []);
+		if (!files.length) return;
+		try {
+			const uploadResult = await onUpload?.({
+				files,
+				folder: folder || undefined,
+			});
+			if (uploadResult === null) return;
+			const resolvedFolder = String(uploadResult?.folder || "").trim();
+			if (resolvedFolder) {
+				folderRef.current = resolvedFolder;
+				folderWasSelectedRef.current = true;
+				setFolder(resolvedFolder);
+				setFolderWasSelected(true);
+				clearValidationMessage();
+			}
+			// ZIP files are unpacked by the server and should not appear as a
+			// single preview item. The refreshed account-assets query displays
+			// the extracted images instead.
+			const previews = files
+				.filter((file) => !isZipFile(file))
+				.map((file) => ({
+					name: file.name,
+					url: URL.createObjectURL(file),
+					mimeType: file.type || "",
+					isImage: isImageFile(file),
+					folder,
+				}));
+			setRecentUploads((current) => {
+				current.forEach((file) => URL.revokeObjectURL(file.url));
+				return [...previews, ...current].slice(0, 10);
+			});
+			setSelectedFile(null);
+			setPage(1);
+			setAssetRefreshKey((current) => current + 1);
+		} finally {
+			event.target.value = "";
+		}
+	};
+
 	return createPortal(
 		<div
 			ref={panelRef}
@@ -148,6 +299,25 @@ const AssetSourceImagesModal = ({
 			}
 			className="fixed z-[120] flex h-[650px] max-h-[calc(100vh-32px)] w-[820px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
 		>
+			{(isUploading || isApplying) && (
+				<div
+					className="pointer-events-none absolute right-12 top-2 z-[130] w-48 rounded-lg border border-violet-200 bg-white/95 px-2.5 py-1.5 shadow-md"
+					role="progressbar"
+					aria-valuemin="0"
+					aria-valuemax="100"
+					aria-valuetext={
+						isApplying ? "Applying image URLs" : "Uploading images"
+					}
+				>
+					<div className="flex items-center gap-1.5 text-[10px] font-semibold text-violet-800">
+						<Loader2 size={12} className="animate-spin" />
+						<span>{isApplying ? "Applying URLs..." : "Uploading..."}</span>
+					</div>
+					<div className="mt-1 h-1 overflow-hidden rounded-full bg-violet-100">
+						<div className="h-full w-2/5 animate-pulse rounded-full bg-violet-600" />
+					</div>
+				</div>
+			)}
 				<div
 					onMouseDown={startDragging}
 					className={`flex cursor-grab items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 active:cursor-grabbing ${
@@ -163,7 +333,7 @@ const AssetSourceImagesModal = ({
 							Update Images
 						</h2>
 						<p className="mt-0.5 text-xs text-gray-500">
-							Upload image assets or preview URLs before applying them.
+							Upload image assets or preview account files before applying them.
 						</p>
 					</div>
 					<button
@@ -176,49 +346,14 @@ const AssetSourceImagesModal = ({
 					</button>
 				</div>
 
-				<div className="flex gap-6 border-b border-gray-200 px-4 pt-3">
-					<button
-						type="button"
-						onClick={() => setActiveTab("upload")}
-						className={tabClass(activeTab === "upload")}
-					>
+				<div className="border-b border-gray-200 px-4 pt-3">
+					<div className="inline-block border-b-2 border-[#7C3AED] px-1 pb-3 text-sm font-semibold text-[#7C3AED]">
 						Upload Images
-					</button>
-					<button
-						type="button"
-						onClick={() => setActiveTab("preview")}
-						className={tabClass(activeTab === "preview")}
-					>
-						Image Preview
-					</button>
+					</div>
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto p-4">
-					{activeTab === "upload" ? (
-						<div className="flex min-h-[250px] items-center justify-center">
-							<div className="flex w-full max-w-sm flex-col items-center rounded-xl border-2 border-dashed border-[#8B5CF6] bg-purple-50/60 px-6 py-7 text-center">
-								<Upload
-									size={38}
-									strokeWidth={1.8}
-									className="mb-4 text-[#7C3AED]"
-								/>
-								<p className="text-base font-semibold text-gray-900">
-									Drag and drop your image asset source
-								</p>
-								<p className="mt-4 text-sm text-gray-400">
-									XLSX, CSV, up to 50MB
-								</p>
-								<button
-									type="button"
-									className="mt-5 inline-flex items-center gap-2 rounded-md bg-[#B600C9] px-7 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#9A00AB]"
-								>
-									<PlusCircle size={16} />
-									Add Files
-								</button>
-							</div>
-						</div>
-					) : (
-						<div className="flex h-full min-h-0 flex-col">
+					<div className="flex h-full min-h-0 flex-col">
 							<div className="grid gap-3 sm:grid-cols-3">
 								<label className="block">
 									<span className="mb-2 block text-sm font-semibold text-gray-700">
@@ -227,9 +362,12 @@ const AssetSourceImagesModal = ({
 									<div className="relative">
 										<select
 											value={referenceColumn}
-											onChange={(event) =>
-												setReferenceColumn(event.target.value)
-											}
+											onChange={(event) => {
+												const value = event.target.value;
+												referenceColumnRef.current = value;
+												setReferenceColumn(value);
+												clearValidationMessage();
+											}}
 											className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-700 outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-purple-100"
 										>
 											<option value="">Select the column</option>
@@ -246,34 +384,59 @@ const AssetSourceImagesModal = ({
 									</div>
 								</label>
 
-								<label className="block">
+								<div className="relative block" ref={folderMenuRef}>
 									<span className="mb-2 block text-sm font-semibold text-gray-700">
 										Folder
 									</span>
 									<div className="relative">
-										<select
-											value={folder}
-											onChange={(event) => {
-												setFolder(event.target.value);
-												setSearch("");
-												setSelectedFile(null);
-												setPage(1);
-											}}
-											className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-700 outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-purple-100"
+										<button
+											type="button"
+											onClick={() =>
+												setFolderMenuOpen((open) => !open)
+											}
+											className="flex h-11 w-full items-center rounded-lg border border-gray-300 bg-white px-4 pr-10 text-left text-sm text-gray-700 outline-none hover:border-violet-300 focus:border-[#8B5CF6] focus:ring-2 focus:ring-purple-100"
 										>
-											<option value="">All folders</option>
-											{folders.map((folderPath) => (
-												<option key={folderPath} value={folderPath}>
-													{folderPath}
-												</option>
-											))}
-										</select>
+											<span className="truncate">
+												{folder || "All folders"}
+											</span>
+										</button>
 										<ChevronDown
 											size={18}
-											className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#A78BFA]"
+											className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#A78BFA] transition-transform ${
+												folderMenuOpen ? "rotate-180" : ""
+											}`}
 										/>
 									</div>
-								</label>
+									{folderMenuOpen && (
+										<div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+											{folderOptions.map((folderPath) => (
+												<button
+													key={folderPath || "__all__"}
+													type="button"
+													title={folderPath || "All folders"}
+													onClick={() => {
+														folderRef.current = folderPath;
+														folderWasSelectedRef.current = true;
+														setFolder(folderPath);
+														setFolderWasSelected(true);
+														clearValidationMessage();
+														setSearch("");
+														setSelectedFile(null);
+														setPage(1);
+														setFolderMenuOpen(false);
+													}}
+													className={`block w-full truncate rounded-md px-3 py-2 text-left text-xs ${
+														folder === folderPath
+															? "bg-violet-100 font-semibold text-violet-800"
+															: "text-gray-700 hover:bg-violet-50"
+													}`}
+												>
+													{folderPath || "All folders"}
+												</button>
+											))}
+										</div>
+									)}
+								</div>
 
 								<label className="relative block">
 									<span className="mb-2 block text-sm font-semibold text-gray-700">
@@ -331,10 +494,14 @@ const AssetSourceImagesModal = ({
 								</label>
 							</div>
 
+							{validationMessage && (
+								<p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+									{validationMessage}
+								</p>
+							)}
+
 							<div className="mt-3 flex h-[370px] shrink-0 flex-col border-y border-gray-200 py-3">
-								{!selectedFile &&
-								(isLoadingImages ||
-									(isFetchingImages && !currentImageData)) ? (
+								{!selectedFile && isLoadingImages && !resultData ? (
 									<div className="flex flex-1 items-center justify-center gap-2 text-sm text-gray-500">
 										<Loader2
 											size={20}
@@ -342,7 +509,7 @@ const AssetSourceImagesModal = ({
 										/>
 										Loading account files...
 									</div>
-								) : isImagesError && !selectedFile ? (
+								) : isImagesError && !selectedFile && !resultData ? (
 									<div className="flex flex-1 items-center justify-center text-sm text-red-600">
 										Could not load files from the account.
 									</div>
@@ -353,7 +520,8 @@ const AssetSourceImagesModal = ({
 												file ? (
 													<div
 														key={`${file.url}-${index}`}
-														className="min-w-0"
+														title={file.name || file.url}
+														className="group relative min-w-0 cursor-pointer"
 													>
 														{file.isImage ? (
 															<div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
@@ -381,6 +549,9 @@ const AssetSourceImagesModal = ({
 																</span>
 															</div>
 														)}
+														<div className="pointer-events-none absolute bottom-1 left-1 right-1 z-10 truncate rounded-md border border-violet-200 bg-gradient-to-r from-violet-50/95 to-fuchsia-50/95 px-1.5 py-1 text-center text-[10px] font-semibold text-violet-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100">
+															{file.name || file.url}
+														</div>
 													</div>
 												) : (
 													<div
@@ -443,6 +614,23 @@ const AssetSourceImagesModal = ({
 							</div>
 
 							<div className="-mx-4 mt-auto flex shrink-0 justify-end gap-2 border-t border-gray-100 bg-white px-4 pt-3">
+								<input
+									ref={fileInputRef}
+									type="file"
+									multiple
+									accept="image/*,.zip,application/zip,application/x-zip-compressed"
+									onChange={handleFileSelection}
+									className="hidden"
+								/>
+								<button
+									type="button"
+									disabled={isUploading}
+									onClick={() => fileInputRef.current?.click()}
+									className="mr-auto inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-5 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									<Upload size={16} />
+									{isUploading ? "Uploading..." : "Upload Images"}
+								</button>
 								<button
 									type="button"
 									onClick={onClose}
@@ -452,13 +640,56 @@ const AssetSourceImagesModal = ({
 								</button>
 								<button
 									type="button"
-									className="rounded-lg bg-[#7C3AED] px-5 py-2 text-sm font-semibold text-white hover:bg-[#6D28D9]"
+									disabled={isApplying}
+									onClick={() => {
+										const selectedReferenceColumn = String(
+											referenceColumnRef.current || referenceColumn
+										).trim();
+										const selectedFolder = String(
+											folderRef.current ?? folder
+										).trim();
+										const hasFolderSelection =
+											folderWasSelectedRef.current ||
+											folderWasSelected ||
+											Boolean(selectedFolder);
+										if (
+											!selectedReferenceColumn ||
+											!hasFolderSelection
+										) {
+											showValidationMessage(
+												"Please select the image reference column and folder."
+											);
+											return;
+										}
+										const referenceKey =
+											selectedReferenceColumn.toLowerCase();
+										const targetColumns = availableColumns.filter(
+											(column) =>
+												String(column || "")
+													.trim()
+													.toLowerCase() !== referenceKey &&
+												isImageTargetColumn(column)
+										);
+										if (targetColumns.length === 0) {
+											showValidationMessage(
+												"No image or sized BG columns are available to receive the URLs."
+											);
+											return;
+										}
+										clearValidationMessage();
+										onApply?.({
+											referenceColumn: selectedReferenceColumn,
+											targetColumns,
+											template: `[${selectedReferenceColumn}]`,
+											folder: selectedFolder,
+										});
+									}}
+									className="rounded-lg bg-[#7C3AED] px-5 py-2 text-sm font-semibold text-white hover:bg-[#6D28D9] disabled:cursor-not-allowed disabled:opacity-50"
 								>
-									Apply URLs
+									{isApplying ? "Applying..." : "Apply URLs"}
 								</button>
 							</div>
 						</div>
-					)}
 				</div>
 			</div>,
 		document.body

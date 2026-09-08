@@ -39,6 +39,7 @@ const accountsApi = api.injectEndpoints({
 				limit = 10,
 				folder = "",
 				search = "",
+				refresh = 0,
 			}) => ({
 				url: `/accounts/${accountId}/mindshare/assets`,
 				params: {
@@ -46,10 +47,14 @@ const accountsApi = api.injectEndpoints({
 					limit,
 					...(folder ? { folder } : {}),
 					...(search ? { search } : {}),
+					...(refresh ? { refresh } : {}),
 				},
 			}),
 			transformResponse: (response) => response.data,
 			keepUnusedDataFor: 300,
+			providesTags: (_result, _error, { accountId }) => [
+				{ type: "MindshareAssets", id: accountId },
+			],
 		}),
 	}),
 });

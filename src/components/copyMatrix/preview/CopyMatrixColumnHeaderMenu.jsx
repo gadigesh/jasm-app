@@ -5,11 +5,24 @@ import {
 	Type,
 	Calendar,
 	Copy,
+	Filter,
 	Replace,
 	Pencil,
 	Trash2,
 	ImagePlus,
 } from "lucide-react";
+
+const FILTER_ONLY_SECTION = {
+	key: "filter-only",
+	title: null,
+	items: [
+		{
+			key: "filter-values",
+			label: "Filter",
+			icon: Filter,
+		},
+	],
+};
 
 const MENU_SECTIONS = [
 	{
@@ -35,6 +48,11 @@ const MENU_SECTIONS = [
 				key: "update-images",
 				label: "Update images",
 				icon: ImagePlus,
+			},
+			{
+				key: "filter-values",
+				label: "Filter",
+				icon: Filter,
 			},
 		],
 	},
@@ -84,6 +102,8 @@ const CopyMatrixColumnHeaderMenu = ({
 	anchorRef,
 	onAction,
 	canRenameDelete = true,
+	readOnly = false,
+	onFilterValuesOpen,
 }) => {
 	const menuRef = useRef(null);
 	const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -115,7 +135,7 @@ const CopyMatrixColumnHeaderMenu = ({
 			window.removeEventListener("scroll", updatePosition, true);
 			window.removeEventListener("resize", updatePosition);
 		};
-	}, [isOpen, anchorRef]);
+	}, [anchorRef, isOpen]);
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -144,6 +164,32 @@ const CopyMatrixColumnHeaderMenu = ({
 
 	if (!isOpen) return null;
 
+	const handleAction = (key) => {
+		const anchorRect =
+			anchorRef?.current?.getBoundingClientRect?.();
+		const actionPayload = {
+			action: key,
+			columnName,
+			anchorRect: anchorRect
+				? {
+						top: anchorRect.top,
+						left: anchorRect.left,
+						right: anchorRect.right,
+						bottom: anchorRect.bottom,
+				  }
+				: null,
+		};
+
+		if (key === "filter-values") {
+			onFilterValuesOpen?.(actionPayload);
+			onClose?.();
+			return;
+		}
+
+		onAction?.(actionPayload);
+		onClose?.();
+	};
+
 	return createPortal(
 		<div
 			ref={menuRef}
@@ -151,79 +197,65 @@ const CopyMatrixColumnHeaderMenu = ({
 			style={{ top: position.top, left: position.left }}
 			className="fixed z-[9999] min-w-[220px] rounded-lg border border-gray-200 bg-white py-1 shadow-xl"
 		>
-			{MENU_SECTIONS.map((section, sectionIndex) => (
-				<div key={section.key}>
-					{sectionIndex > 0 && (
-						<div className="my-1 border-t border-gray-100" />
-					)}
-					{section.title && (
-						<p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-							{section.title}
-						</p>
-					)}
-					{section.items.map(({ key, label, icon: Icon, danger }) => {
-						const isStructureAction =
-							key === "rename-column" || key === "delete-column";
-						const disabled =
-							isStructureAction && !canRenameDelete;
+			{(readOnly ? [FILTER_ONLY_SECTION] : MENU_SECTIONS).map(
+				(section, sectionIndex) => (
+					<div key={section.key}>
+						{sectionIndex > 0 && (
+							<div className="my-1 border-t border-gray-100" />
+						)}
+						{section.title && (
+							<p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+								{section.title}
+							</p>
+						)}
+						{section.items.map(({ key, label, icon, danger }) => {
+							const isStructureAction =
+								key === "rename-column" || key === "delete-column";
+							const disabled =
+								isStructureAction && !canRenameDelete;
+							const iconClass = disabled
+								? "text-gray-300"
+								: danger
+								? "text-red-500"
+								: "text-gray-400";
 
-						return (
-							<button
-								key={key}
-								type="button"
-								role="menuitem"
-								disabled={disabled}
-								title={
-									disabled
-										? "This column is synced with an asset source"
-										: undefined
-								}
-								onClick={() => {
-									if (disabled) return;
-									const anchorRect =
-										anchorRef?.current?.getBoundingClientRect?.();
-									onAction?.({
-										action: key,
-										columnName,
-										anchorRect: anchorRect
-											? {
-													top: anchorRect.top,
-													left: anchorRect.left,
-													right: anchorRect.right,
-													bottom: anchorRect.bottom,
-												}
-											: null,
-									});
-									onClose?.();
-								}}
-								className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-									disabled
-										? "cursor-not-allowed text-gray-300"
-										: danger
-										? "text-red-600 hover:bg-red-50"
-										: "text-gray-700 hover:bg-gray-50"
-								}`}
-							>
-								<Icon
-									size={15}
-									className={
+							return (
+								<button
+									key={key}
+									type="button"
+									role="menuitem"
+									disabled={disabled}
+									title={
 										disabled
-											? "text-gray-300"
-											: danger
-											? "text-red-500"
-											: "text-gray-400"
+											? "This column is synced with an asset source"
+											: undefined
 									}
-								/>
-								{label}
-							</button>
-						);
-					})}
-				</div>
-			))}
+									onClick={() => {
+										if (disabled) return;
+										handleAction(key);
+									}}
+									className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+										disabled
+											? "cursor-not-allowed text-gray-300"
+											: danger
+											? "text-red-600 hover:bg-red-50"
+											: "text-gray-700 hover:bg-gray-50"
+									}`}
+								>
+									{React.createElement(icon, {
+										size: 15,
+										className: iconClass,
+									})}
+									{label}
+								</button>
+							);
+						})}
+					</div>
+				)
+			)}
 		</div>,
 		document.body
 	);
 };
 
 export default CopyMatrixColumnHeaderMenu;
-export { MENU_SECTIONS };

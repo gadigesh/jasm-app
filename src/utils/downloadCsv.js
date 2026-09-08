@@ -1,9 +1,9 @@
 const BASE_URL =
-	process.env.NODE_ENV === "production"
+	import.meta.env.PROD
 		? "https://jasm-app-sever.onrender.com"
 		: "http://localhost:3333";
 
-export async function downloadFromApi(path, filename) {
+export async function downloadFromApi(path, filename, extension = ".csv") {
 	const res = await fetch(`${BASE_URL}${path}`, { credentials: "include" });
 	if (!res.ok) {
 		const contentType = res.headers.get("content-type") || "";
@@ -21,7 +21,12 @@ export async function downloadFromApi(path, filename) {
 	const url = URL.createObjectURL(blob);
 	const link = document.createElement("a");
 	link.href = url;
-	link.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
+	const normalizedExtension = extension.startsWith(".")
+		? extension
+		: `.${extension}`;
+	link.download = filename.endsWith(normalizedExtension)
+		? filename
+		: `${filename}${normalizedExtension}`;
 	link.click();
 	URL.revokeObjectURL(url);
 }

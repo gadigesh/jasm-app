@@ -37,6 +37,9 @@ const EditableSheetTable = forwardRef(
 			selectedRowIds,
 			onSelectedRowIdsChange,
 			onColumnAction,
+			columnFilters = {},
+			sortConfig = null,
+			onFilterValuesOpen,
 			selectableRows = false,
 			columnMenus = false,
 			canRenameDeleteColumns = true,
@@ -315,7 +318,7 @@ const EditableSheetTable = forwardRef(
 		const showRowIdColumn = visibleColumns.includes(AUTO_ROW_ID_COLUMN);
 		const showRowNumberColumn = !matrixHasRowIdColumn;
 		const showCheckboxes = selectableRows && !readOnly;
-		const showColumnMenus = columnMenus && !readOnly;
+		const showColumnMenus = columnMenus;
 		const showRowActions =
 			!readOnly && (onRowEdit || onRowCopy || onRowDelete);
 		const stickySecondLeft = showCheckboxes ? "left-[40px]" : "left-0";
@@ -389,6 +392,17 @@ const EditableSheetTable = forwardRef(
 												stickyClassName={stickyRowRefClass}
 												readOnly={readOnly}
 												onAction={onColumnAction}
+												activeFilterValues={
+													columnFilters?.[col]
+												}
+												onFilterValuesOpen={
+													onFilterValuesOpen
+												}
+												sortDirection={
+													sortConfig?.column === col
+														? sortConfig.direction
+														: ""
+												}
 												canRenameDelete={
 													typeof canRenameDeleteColumns ===
 													"function"
