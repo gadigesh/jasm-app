@@ -20,7 +20,6 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 	const [file, setFile] = useState(null);
 	const [url, setUrl] = useState("");
 	const [assetName, setAssetName] = useState("");
-	const [uniqueColumn, setUniqueColumn] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [uploadPhase, setUploadPhase] = useState("processing");
@@ -61,10 +60,6 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 			showError("Please enter an asset source name");
 			return;
 		}
-		if (!uniqueColumn.trim()) {
-			showError("Please enter the unique column (primary key)");
-			return;
-		}
 		if (activeTab === "file" && !file) {
 			showError("Please select a file to upload");
 			return;
@@ -77,7 +72,6 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 		const formData = new FormData();
 		formData.append("accountId", accountId);
 		formData.append("assetName", assetName.trim());
-		formData.append("uniqueColumn", uniqueColumn.trim());
 
 		const isFileUpload = activeTab === "file";
 
@@ -124,7 +118,6 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 		setFile(null);
 		setUrl("");
 		setAssetName("");
-		setUniqueColumn("");
 		setActiveTab("file");
 		setNameValidation({ isDuplicate: false, isChecking: false });
 		resetProgress();
@@ -142,34 +135,19 @@ const AddASUploadModal = ({ isOpen, onClose, accountId }) => {
 			<p className="text-gray-500 mb-4">Add your Asset source here.</p>
 
 			<div className={isSubmitting ? "pointer-events-none select-none" : ""}>
-			<div className="grid grid-cols-2 gap-4 mb-4">
-				<div>
-					<ValidatedNameInput
-						label="Asset Source Name"
-						required
-						value={assetName}
-						onChange={(e) => setAssetName(e.target.value)}
-						placeholder="e.g. Summer Campaign"
-						accountId={accountId}
-						type="assetSource"
-						size="lg"
-						enabled={Boolean(accountId)}
-						onValidationChange={setNameValidation}
-					/>
-				</div>
-				<div>
-					<label className="block text-sm font-bold text-gray-900 mb-1">
-						Unique Column <span className="text-red-500">*</span>
-					</label>
-					<input
-						type="text"
-						value={uniqueColumn}
-						onChange={(e) => setUniqueColumn(e.target.value)}
-						placeholder="e.g. SKU or product_id"
-						autoComplete="new-password"
-						className={formInputLgClass}
-					/>
-				</div>
+			<div className="mb-4">
+				<ValidatedNameInput
+					label="Asset Source Name"
+					required
+					value={assetName}
+					onChange={(e) => setAssetName(e.target.value)}
+					placeholder="e.g. Summer Campaign"
+					accountId={accountId}
+					type="assetSource"
+					size="lg"
+					enabled={Boolean(accountId)}
+					onValidationChange={setNameValidation}
+				/>
 			</div>
 
 			<div

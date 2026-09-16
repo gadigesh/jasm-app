@@ -1,55 +1,25 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 
-const GAP = 8;
-
 const IconTooltip = ({ label, children, position = "top", className = "" }) => {
-	const [visible, setVisible] = useState(false);
-	const [style, setStyle] = useState({});
+	const [coords, setCoords] = useState(null);
 	const triggerRef = useRef(null);
 
-	const updatePosition = useCallback(() => {
-		const el = triggerRef.current;
-		if (!el) return;
-
-		const rect = el.getBoundingClientRect();
-		const centerX = rect.left + rect.width / 2;
-
-		if (position === "bottom") {
-			setStyle({
-				top: rect.bottom + GAP,
-				left: centerX,
-				transform: "translateX(-50%)",
-			});
-			return;
-		}
-
-		setStyle({
-			top: rect.top - GAP,
-			left: centerX,
-			transform: "translate(-50%, -100%)",
-		});
-	}, [position]);
-
 	const show = () => {
-		updatePosition();
-		setVisible(true);
+		const el = triggerRef.current;
+		if (!el || !label) return;
+		const rect = el.getBoundingClientRect();
+		const x = Math.min(
+			Math.max(rect.left + rect.width / 2, 96),
+			window.innerWidth - 96
+		);
+		const showBelow = position === "bottom";
+		setCoords({
+			x,
+			y: showBelow ? rect.bottom + 8 : rect.top - 8,
+			showBelow,
+		});
 	};
-
-	const hide = () => setVisible(false);
-
-	useEffect(() => {
-		if (!visible) return;
-
-		const handleReposition = () => updatePosition();
-		window.addEventListener("scroll", handleReposition, true);
-		window.addEventListener("resize", handleReposition);
-
-		return () => {
-			window.removeEventListener("scroll", handleReposition, true);
-			window.removeEventListener("resize", handleReposition);
-		};
-	}, [visible, updatePosition]);
 
 	if (!label) return children;
 
@@ -59,23 +29,40 @@ const IconTooltip = ({ label, children, position = "top", className = "" }) => {
 				ref={triggerRef}
 				className={`inline-flex items-center justify-center ${className}`.trim()}
 				onMouseEnter={show}
-				onMouseLeave={hide}
-				onFocus={show}
-				onBlur={hide}
+				onMouseLeave={() => setCoords(null)}
 			>
 				{children}
 			</span>
-			{visible &&
-				createPortal(
-					<div
-						role="tooltip"
-						className="fixed z-[9999] max-w-xs rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium leading-snug text-white shadow-lg pointer-events-none whitespace-pre-line"
-						style={style}
-					>
-						{label}
-					</div>,
-					document.body
-				)}
+			{coords
+				? createPortal(
+						<div
+							role="tooltip"
+							style={{
+								position: "fixed",
+								top: coords.y,
+								left: coords.x,
+								transform: coords.showBelow
+									? "translateX(-50%)"
+									: "translate(-50%, -100%)",
+								zIndex: 2147483647,
+								background: "#111827",
+								color: "#fff",
+								fontSize: 12,
+								fontWeight: 500,
+								lineHeight: 1.45,
+								padding: "6px 10px",
+								borderRadius: 6,
+								whiteSpace: "pre-line",
+								pointerEvents: "none",
+								maxWidth: 280,
+								boxShadow: "0 10px 24px rgba(15, 23, 42, 0.28)",
+							}}
+						>
+							{label}
+						</div>,
+						document.body
+					)
+				: null}
 		</>
 	);
 };

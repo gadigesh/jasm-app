@@ -552,6 +552,28 @@ const copyMatrixApi = api.injectEndpoints({
 			transformResponse: (response) => response.data,
 		}),
 
+		refreshCopyMatrix: builder.mutation({
+			query: (id) => ({
+				url: `/copy-matrix/${id}/refresh`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+		}),
+
+		applyCopyMatrixRefresh: builder.mutation({
+			query: (id) => ({
+				url: `/copy-matrix/${id}/refresh/apply`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, id) => [
+				{ type: "CopyMatrices", id: "LIST" },
+				{ type: "CopyMatrices", id },
+				{ type: "CopyMatrixRows", id },
+				"AssetUploads",
+			],
+		}),
+
 		saveAndContinueCopyMatrix: builder.mutation({
 			query: ({ id, rows = [] }) => ({
 				url: `/copy-matrix/${id}/save-and-continue`,
@@ -691,5 +713,7 @@ export const {
 	useRenameCopyMatrixColumnMutation,
 	useDeleteCopyMatrixColumnMutation,
 	useCheckCopyMatrixUniqueColumnMutation,
+	useRefreshCopyMatrixMutation,
+	useApplyCopyMatrixRefreshMutation,
 	useSaveAndContinueCopyMatrixMutation,
 } = copyMatrixApi;

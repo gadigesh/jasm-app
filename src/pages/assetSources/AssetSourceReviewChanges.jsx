@@ -9,6 +9,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
 	useGetAssetSourceQuery,
 	useUpdateAssetSourceRowsMutation,
+	useApplyAssetSourceRefreshMutation,
 } from "../../store/services/assetUpload";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
 import { clearEditDraft } from "../../utils/editDraftStorage";
@@ -80,6 +81,7 @@ const AssetSourceReviewChanges = () => {
 		useGetAssetSourceQuery(id, { skip: !id });
 	const { data: meData } = useGetMeQuery();
 	const [updateRows] = useUpdateAssetSourceRowsMutation();
+	const [applyAssetSourceRefresh] = useApplyAssetSourceRefreshMutation();
 
 	const review = useMemo(
 		() => location.state?.review || readStoredReview(id) || {},
@@ -138,6 +140,9 @@ const AssetSourceReviewChanges = () => {
 		if (isConfirming) return;
 		setIsConfirming(true);
 		try {
+			if (review.copyMatrixRefresh) {
+				await applyAssetSourceRefresh(id).unwrap();
+			}
 			if (edits.length > 0) {
 				await updateRows({ id, rows: edits }).unwrap();
 			}

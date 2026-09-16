@@ -1,4 +1,4 @@
-import { Plus, ArrowLeft, Upload, Download } from "lucide-react";
+import { Plus, ArrowLeft, Upload, Download, RefreshCw } from "lucide-react";
 import SortDropdown from "../common/SortDropdown";
 import FilterDropdown from "../common/FilterDropdown";
 export const SortAction = (props) => <SortDropdown {...props} />;
@@ -56,6 +56,23 @@ export const ImportButton = ({ onClick, tooltip = "Import" }) => (
 	>
 		<Upload className="h-4 w-4" />
 		Import
+	</button>
+);
+export const RefreshButton = ({
+	onClick,
+	disabled,
+	tooltip = "Refresh from source",
+	label = "Refresh",
+}) => (
+	<button
+		type="button"
+		onClick={onClick}
+		disabled={disabled}
+		title={tooltip}
+		className="flex items-center gap-2 px-4 py-2 border border-[#EEF2F6] text-[#64748B] rounded-lg hover:border-[#B600C9] hover:text-[#B600C9] text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+	>
+		<RefreshCw className={`h-4 w-4 ${disabled ? "animate-spin" : ""}`} />
+		{label}
 	</button>
 );
 export const ExportButton = ({ onClick, tooltip = "Export" }) => (

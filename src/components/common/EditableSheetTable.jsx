@@ -32,6 +32,8 @@ const EditableSheetTable = forwardRef(
 			readOnlyColumns = [],
 			highlightedRowId = null,
 			highlightedColumn = null,
+			highlightedCells = [],
+			rowStatusById = {},
 			duplicateHighlight = null,
 			hiddenColumns = [],
 			selectedRowIds,
@@ -135,7 +137,9 @@ const EditableSheetTable = forwardRef(
 		const visibleColumns = useMemo(
 			() =>
 				columns.filter(
-					(col) => !(hiddenColumns || []).includes(col)
+					(col) =>
+						col !== AUTO_ROW_ID_COLUMN &&
+						!(hiddenColumns || []).includes(col)
 				),
 			[columns, hiddenColumns]
 		);
@@ -148,6 +152,40 @@ const EditableSheetTable = forwardRef(
 		}, [duplicateHighlight]);
 
 		const duplicateColumn = duplicateHighlight?.column || null;
+		const highlightedCellKeys = useMemo(() => {
+			const keys = new Set();
+			for (const cell of highlightedCells || []) {
+				if (!cell?.column) continue;
+				if (cell.rowIndex != null) {
+					keys.add(`${cell.rowIndex}::${cell.column}`);
+				}
+				if (cell.rowId != null) {
+					keys.add(`${cell.rowId}::${cell.column}`);
+				}
+			}
+			return keys;
+		}, [highlightedCells]);
+		const highlightedRowIndexes = useMemo(() => {
+			const indexes = new Set();
+			for (const cell of highlightedCells || []) {
+				if (cell?.rowIndex != null) indexes.add(Number(cell.rowIndex));
+			}
+			return indexes;
+		}, [highlightedCells]);
+		const addedRowIds = useMemo(() => {
+			const ids = new Set();
+			for (const [rowId, status] of Object.entries(rowStatusById || {})) {
+				if (status === "added") ids.add(String(rowId));
+			}
+			return ids;
+		}, [rowStatusById]);
+		const removedRowIds = useMemo(() => {
+			const ids = new Set();
+			for (const [rowId, status] of Object.entries(rowStatusById || {})) {
+				if (status === "removed") ids.add(String(rowId));
+			}
+			return ids;
+		}, [rowStatusById]);
 
 		const isSelectionControlled = selectedRowIds != null;
 		const selectedIds = useMemo(() => {
@@ -331,6 +369,12 @@ const EditableSheetTable = forwardRef(
 		const stickyRowRefCellHighlightClass = `sticky ${stickySecondLeft} z-10 bg-yellow-50 shadow-[1px_0_0_0_#fef9c3]`;
 		const stickyCheckboxHighlightClass =
 			"sticky left-0 z-20 bg-yellow-50 shadow-[1px_0_0_0_#fef9c3]";
+		const stickyRowRefCellAddedClass = `sticky ${stickySecondLeft} z-10 bg-emerald-50 shadow-[1px_0_0_0_#a7f3d0]`;
+		const stickyCheckboxAddedClass =
+			"sticky left-0 z-20 bg-emerald-50 shadow-[1px_0_0_0_#a7f3d0]";
+		const stickyRowRefCellRemovedClass = `sticky ${stickySecondLeft} z-10 bg-red-50 shadow-[1px_0_0_0_#fecaca]`;
+		const stickyCheckboxRemovedClass =
+			"sticky left-0 z-20 bg-red-50 shadow-[1px_0_0_0_#fecaca]";
 
 		return (
 			<>
@@ -479,32 +523,51 @@ const EditableSheetTable = forwardRef(
 						<tbody className="divide-y divide-gray-100">
 							{rows.map((row) => {
 								const rowId = String(row._id);
+								const isAddedRow = addedRowIds.has(rowId);
+								const isRemovedRow = removedRowIds.has(rowId);
+								const isRefreshHighlighted = highlightedRowIndexes.has(
+									Number(row.rowIndex)
+								);
 								const isHighlighted =
-									highlightedRowId &&
-									rowId === String(highlightedRowId);
+									(highlightedRowId &&
+									rowId === String(highlightedRowId)) ||
+									isRefreshHighlighted;
 								const isSelected = selectedIds.has(rowId);
-								const rowStickyClass = isHighlighted
+								const rowStickyClass = isRemovedRow
+									? stickyRowRefCellRemovedClass
+									: isAddedRow
+									? stickyRowRefCellAddedClass
+									: isHighlighted
 									? stickyRowRefCellHighlightClass
 									: stickyRowRefCellClass;
-								const checkboxStickyClass = isHighlighted
+								const checkboxStickyClass = isRemovedRow
+									? stickyCheckboxRemovedClass
+									: isAddedRow
+									? stickyCheckboxAddedClass
+									: isHighlighted
 									? stickyCheckboxHighlightClass
 									: stickyCheckboxCellClass;
+								const rowClassName = isRemovedRow
+									? "bg-red-50 text-red-800"
+									: isAddedRow
+									? "bg-emerald-50"
+									: isHighlighted
+									? "bg-yellow-50"
+									: isSelected
+									? "bg-purple-50/40"
+									: "hover:bg-gray-50";
 
 								return (
 									<tr
 										key={row._id}
 										ref={
-											isHighlighted
+											isHighlighted ||
+											isAddedRow ||
+											isRemovedRow
 												? highlightedRowRef
 												: null
 										}
-										className={
-											isHighlighted
-												? "bg-yellow-50"
-												: isSelected
-												? "bg-purple-50/40"
-												: "hover:bg-gray-50"
-										}
+										className={rowClassName}
 									>
 										{showCheckboxes && (
 											<td
@@ -547,9 +610,22 @@ const EditableSheetTable = forwardRef(
 											const isDuplicateCell =
 												duplicateColumn === col &&
 												duplicateRowIds.has(rowId);
+											const isRefreshCell =
+												highlightedCellKeys.has(
+													`${row.rowIndex}::${col}`
+												) ||
+												highlightedCellKeys.has(
+													`${rowId}::${col}`
+												);
 											const cellHighlightClass =
 												isDuplicateCell
 													? "bg-orange-100 ring-1 ring-inset ring-orange-300"
+													: isRemovedRow
+													? "bg-red-50 line-through decoration-red-400"
+													: isAddedRow
+													? "bg-emerald-50"
+													: isRefreshCell
+													? "bg-amber-100 ring-1 ring-inset ring-amber-300"
 													: isColHighlighted
 													? "bg-yellow-50"
 													: isStickyCol

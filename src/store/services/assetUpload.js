@@ -485,6 +485,29 @@ const assetUpload = api.injectEndpoints({
 				{ type: "AssetUploads", id },
 			],
 		}),
+
+		refreshAssetSource: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}/refresh`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+		}),
+
+		applyAssetSourceRefresh: builder.mutation({
+			query: (id) => ({
+				url: `/source/${id}/refresh/apply`,
+				method: "POST",
+			}),
+			transformResponse: (response) => response.data,
+			invalidatesTags: (_r, _e, id) => [
+				{ type: "AssetUploads", id: "LIST" },
+				{ type: "AssetUploads", id },
+				{ type: "AssetSourceRows", id },
+				"AssetUploads",
+				"CopyMatrices",
+			],
+		}),
 	}),
 	overrideExisting: true,
 });
@@ -526,4 +549,6 @@ export const {
 	useDeleteAssetSourceRowMutation,
 	useAddAssetSourceColumnMutation,
 	useCloneAssetSourceRowMutation,
+	useRefreshAssetSourceMutation,
+	useApplyAssetSourceRefreshMutation,
 } = assetUpload;

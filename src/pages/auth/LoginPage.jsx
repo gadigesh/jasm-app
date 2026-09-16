@@ -18,7 +18,7 @@ const LoginPage = () => {
 	const [isLoginForm, setIsLogInForm] = useState(false);
 	const navigate = useNavigate();
 	const [login, { isLoading }] = useLoginMutation();
-	const [signup] = useSignupMutation();
+	const [signup, { isLoading: isSigningUp }] = useSignupMutation();
 	const dispatch = useDispatch();
 	usePageTitle(isLoginForm ? "Sign Up" : "Sign In");
 	const handleLogin = async () => {
@@ -37,17 +37,16 @@ const LoginPage = () => {
 	};
 	const handleSignUp = async () => {
 		try {
-			const response = await signup({
+			await signup({
 				emailId,
 				password,
 				firstName,
 				lastName,
 			}).unwrap();
-			dispatch(addUser(response));
-			navigate("/dashboard", {
-				replace: true,
-			});
-			showSuccess("Signup successful");
+			setIsLogInForm(false);
+			setFirstName("");
+			setLastName("");
+			showSuccess("Account created. Please sign in with your details.");
 		} catch (err) {
 			showError(
 				"Signup Failed Please check the entered details once again"
@@ -163,10 +162,10 @@ const LoginPage = () => {
 								)} */}
 								<button
 									type="submit"
-									disabled={isLoading}
+									disabled={isLoading || isSigningUp}
 									className="w-full bg-[#8b3cf1] hover:bg-[#7a2de3] text-white py-2.5 rounded-md font-medium transition"
 								>
-									{isLoading
+									{isLoading || isSigningUp
 										? "Processing..."
 										: isLoginForm
 										? "Sign Up"

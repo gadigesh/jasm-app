@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GripVertical, X } from "lucide-react";
 import { formInputClass } from "../../../utils/formStyles";
+import { AUTO_ROW_ID_COLUMN } from "../../../utils/constants";
 
 const EditSheetRowModal = ({
 	isOpen,
@@ -23,10 +24,13 @@ const EditSheetRowModal = ({
 		if (!isOpen || !row) return;
 		setValues(
 			columns.reduce(
-				(result, column) => ({
-					...result,
-					[column]: row[column] == null ? "" : String(row[column]),
-				}),
+				(result, column) => {
+					if (column === AUTO_ROW_ID_COLUMN) return result;
+					return {
+						...result,
+						[column]: row[column] == null ? "" : String(row[column]),
+					};
+				},
 				{}
 			)
 		);
@@ -127,7 +131,9 @@ const EditSheetRowModal = ({
 				}}
 			>
 				<div className="space-y-2">
-					{columns.map((column) => (
+					{columns
+						.filter((column) => column !== AUTO_ROW_ID_COLUMN)
+						.map((column) => (
 						<label
 							key={column}
 							className="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-2"

@@ -17,6 +17,7 @@ import {
 	useRetryUploadMutation,
 	useDeleteAssetSourceMutation,
 	useCloneAssetSourceMutation,
+	useRefreshAssetSourceMutation,
 } from "../../store/services/assetUpload";
 import { useGetMeQuery } from "../../store/services/userAuthApi";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -111,6 +112,8 @@ const AssetSourceList = () => {
 		useDeleteAssetSourceMutation();
 	const [cloneAssetSource, { isLoading: isCloning }] =
 		useCloneAssetSourceMutation();
+	const [refreshAssetSource] = useRefreshAssetSourceMutation();
+	const [refreshingId, setRefreshingId] = useState(null);
 
 	const openDraft = (draft) => {
 		if (!draft?._id) return;
@@ -242,6 +245,47 @@ const AssetSourceList = () => {
 		}
 	};
 
+	const handleRefresh = async (row) => {
+		if (!row?._id || refreshingId) return;
+		if (row.canRefresh === false) {
+			showError("This asset source is not linked to a copy matrix");
+			return;
+		}
+		const pendingCount =
+			Number(row.changedRowCount) ||
+			(Number(row.addedRowCount) || 0) +
+				(Number(row.modifiedRowCount) || 0) +
+				(Number(row.removedRowCount) || 0) +
+				(Number(row.newColumnCount) || 0);
+		if (pendingCount <= 0) {
+			return;
+		}
+		setRefreshingId(row._id);
+		try {
+			const preview = await refreshAssetSource(row._id).unwrap();
+			if (!preview?.hasChanges) {
+				return;
+			}
+			navigate(`/asset-sources/${row._id}/preview`, {
+				state: {
+					skipEditDraft: true,
+					copyMatrixRefresh: true,
+					refreshHighlights: preview.highlights || null,
+					refreshPendingEdits: preview.pendingEdits || {},
+					refreshAddedRows: preview.addedRows || [],
+					refreshRemovedRows: preview.removedRows || [],
+					refreshNewColumns: preview.newColumns || [],
+				},
+			});
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to refresh asset source")
+			);
+		} finally {
+			setRefreshingId(null);
+		}
+	};
+
 	// 4. TRANSFORM & SORT DATA
 	const filteredAndSortedData = useMemo(() => {
 		if (!uploads) return [];
@@ -265,6 +309,20 @@ const AssetSourceList = () => {
 				status: item.status,
 				errorLog: item.errorLog,
 				validationErrors: item.validationErrors,
+				canRefresh:
+					Boolean(item.canRefresh) ||
+					Boolean(item.copyMatrixId) ||
+					(item.mappedCopyMatrices || []).length > 0,
+				addedRowCount: Number(item.addedRowCount) || 0,
+				modifiedRowCount: Number(item.modifiedRowCount) || 0,
+				removedRowCount: Number(item.removedRowCount) || 0,
+				newColumnCount: Number(item.newColumnCount) || 0,
+				changedRowCount:
+					Number(item.changedRowCount) ||
+					(Number(item.addedRowCount) || 0) +
+						(Number(item.modifiedRowCount) || 0) +
+						(Number(item.removedRowCount) || 0) +
+						(Number(item.newColumnCount) || 0),
 			};
 		});
 
@@ -505,12 +563,15 @@ const AssetSourceList = () => {
 					}}
 					onDelete={(row) => setDeleteTarget(row)}
 					onClone={(row) => setCloneTarget(row)}
+					onRefresh={handleRefresh}
+					refreshingId={refreshingId}
 					tooltips={{
 						edit: "Edit asset source",
 						view: "View asset source",
 						download: "Download CSV",
 						delete: "Delete asset source",
 						clone: "Clone asset source",
+						refresh: "Refresh",
 					}}
 				/>
 				<div className="px-6">

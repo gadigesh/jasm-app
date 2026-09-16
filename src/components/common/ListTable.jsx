@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Pencil, Eye, Download, Trash, Copy } from "lucide-react";
+import { Pencil, Eye, Download, Trash, Copy, RefreshCw } from "lucide-react";
 import IconTooltip from "./IconTooltip";
 
 const alignClass = (align) => {
@@ -27,6 +27,82 @@ const bodyCellClass =
 const iconButtonClass =
 	"inline-flex items-center justify-center rounded p-0.5 text-gray-400 hover:text-indigo-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]";
 
+function formatChangeBadge(row) {
+	const added = Math.max(0, Number(row?.addedRowCount) || 0);
+	const modified = Math.max(0, Number(row?.modifiedRowCount) || 0);
+	const removed = Math.max(0, Number(row?.removedRowCount) || 0);
+	const newColumns = Math.max(0, Number(row?.newColumnCount) || 0);
+	const value = Math.max(
+		added + modified + removed + newColumns,
+		Number(row?.changedRowCount) || 0
+	);
+	if (value <= 0) return null;
+	const actual = String(value);
+	const parts = [];
+	if (added > 0) {
+		parts.push(`${added} new row${added === 1 ? "" : "s"}`);
+	}
+	if (modified > 0) {
+		parts.push(`${modified} updated row${modified === 1 ? "" : "s"}`);
+	}
+	if (removed > 0) {
+		parts.push(`${removed} removed row${removed === 1 ? "" : "s"}`);
+	}
+	if (newColumns > 0) {
+		parts.push(
+			`${newColumns} new column${newColumns === 1 ? "" : "s"}`
+		);
+	}
+	const detail = parts.join("\n");
+	return {
+		value,
+		display: actual.length > 3 ? `${actual.slice(0, 3)}...` : actual,
+		label:
+			actual.length > 3
+				? [actual, detail].filter(Boolean).join("\n")
+				: detail || actual,
+	};
+}
+
+function RefreshActionButton({
+	row,
+	label,
+	refreshingId,
+	onRefresh,
+}) {
+	const badge = formatChangeBadge(row);
+	const isRefreshing = refreshingId === row._id;
+
+	return (
+		<span className="relative inline-flex">
+			<IconTooltip label={label}>
+				<button
+					type="button"
+					aria-label={label}
+					disabled={isRefreshing || row.canRefresh === false}
+					className={`${iconButtonClass} disabled:pointer-events-none disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400`}
+					onClick={() => onRefresh?.(row)}
+				>
+					<RefreshCw
+						size={16}
+						className={isRefreshing ? "animate-spin" : ""}
+					/>
+				</button>
+			</IconTooltip>
+			{badge ? (
+				<IconTooltip
+					label={badge.label}
+					className="absolute -right-2 -top-2 z-20"
+				>
+					<span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[9px] font-bold leading-none text-white shadow-sm">
+						{badge.display}
+					</span>
+				</IconTooltip>
+			) : null}
+		</span>
+	);
+}
+
 const ListTable = ({
 	columns = [],
 	rows = [],
@@ -38,6 +114,8 @@ const ListTable = ({
 	onDelete,
 	onDownload,
 	onClone,
+	onRefresh,
+	refreshingId = null,
 	tooltips = {},
 }) => {
 	const [scrolled, setScrolled] = useState(false);
@@ -49,6 +127,7 @@ const ListTable = ({
 		download: "Download CSV",
 		delete: "Delete",
 		clone: "Clone",
+		refresh: "Refresh from source",
 		...tooltips,
 	};
 
@@ -137,10 +216,18 @@ const ListTable = ({
 										</td>
 									))}
 									<td
-										className={`${bodyCellClass} text-center overflow-visible group-hover:bg-gray-50`}
+										className={`${bodyCellClass} relative z-10 text-center overflow-visible group-hover:bg-gray-50`}
 										onClick={(e) => e.stopPropagation()}
 									>
 										<div className="flex justify-center items-center gap-3 text-gray-400">
+											{onRefresh && (
+												<RefreshActionButton
+													row={row}
+													label={labels.refresh}
+													refreshingId={refreshingId}
+													onRefresh={onRefresh}
+												/>
+											)}
 											<IconTooltip label={labels.edit}>
 												<button
 													type="button"

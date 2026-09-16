@@ -19,6 +19,9 @@ const AssetSourceCreatedSuccess = lazy(() =>
 const AssetSourceReviewChanges = lazy(() =>
 	import("./pages/assetSources/AssetSourceReviewChanges")
 );
+const AssetSourceRefreshReview = lazy(() =>
+	import("./pages/assetSources/AssetSourceRefreshReview")
+);
 const CopyMatrixList = lazy(() =>
 	import("./pages/copyMatrix/CopyMatrixList")
 );
@@ -27,6 +30,9 @@ const CopyMatrixPreview = lazy(() =>
 );
 const CopyMatrixWorkflow = lazy(() =>
 	import("./pages/copyMatrix/CopyMatrixWorkflow")
+);
+const CopyMatrixRefreshReview = lazy(() =>
+	import("./pages/copyMatrix/CopyMatrixRefreshReview")
 );
 
 const RouteLoading = () => (
@@ -57,6 +63,10 @@ function AppContent() {
 								element={<CopyMatrixPreview />}
 							/>
 							<Route
+								path="copy-matrix/:id/refresh"
+								element={<CopyMatrixRefreshReview />}
+							/>
+							<Route
 								path="copy-matrix/:id/workflow"
 								element={<CopyMatrixWorkflow />}
 							/>
@@ -71,6 +81,10 @@ function AppContent() {
 							<Route
 								path="asset-sources/:id/review"
 								element={<AssetSourceReviewChanges />}
+							/>
+							<Route
+								path="asset-sources/:id/refresh"
+								element={<AssetSourceRefreshReview />}
 							/>
 							<Route
 								path="asset-sources"

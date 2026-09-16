@@ -19,6 +19,7 @@ import {
 	useGetCopyMatricesQuery,
 	useDeleteCopyMatrixMutation,
 	useCloneCopyMatrixMutation,
+	useRefreshCopyMatrixMutation,
 } from "../../store/services/copyMatrix";
 import AddCopyMatrixUploadModal from "../../components/modals/AddCopyMatrixUploadModal";
 import CloneNameModal from "../../components/modals/CloneNameModal";
@@ -27,6 +28,7 @@ import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { resolveCopyMatrixEditPath } from "../../utils/copyMatrixHelpers";
+import { openRefreshReview } from "../../utils/copyMatrixRefresh";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { readActiveAccountId } from "../../utils/activeAccountStorage";
 import {
@@ -99,6 +101,8 @@ const CopyMatrixList = () => {
 		useDeleteCopyMatrixMutation();
 	const [cloneCopyMatrix, { isLoading: isCloning }] =
 		useCloneCopyMatrixMutation();
+	const [refreshCopyMatrix] = useRefreshCopyMatrixMutation();
+	const [refreshingId, setRefreshingId] = useState(null);
 
 	const filteredAndSortedData = useMemo(() => {
 		if (!matrices) return [];
@@ -112,6 +116,7 @@ const CopyMatrixList = () => {
 			historicalMappedAssetSourceNames:
 				item.historicalMappedAssetSourceNames || [],
 			canRecreateAssetSource: Boolean(item.canRecreateAssetSource),
+			canRefresh: item.canRefresh !== false,
 			rawStatus: item.rawStatus || null,
 			updatedAt: item.updatedAt,
 			displayDate: formatListDate(item.updatedAt),
@@ -198,6 +203,25 @@ const CopyMatrixList = () => {
 		link.click();
 		URL.revokeObjectURL(url);
 		showSuccess("Export downloaded");
+	};
+
+	const handleRefresh = async (row) => {
+		if (!row?._id || refreshingId) return;
+		setRefreshingId(row._id);
+		try {
+			const review = await refreshCopyMatrix(row._id).unwrap();
+			if (!review?.hasChanges) {
+				showSuccess("Copy matrix is already up to date");
+				return;
+			}
+			openRefreshReview(navigate, row._id, review);
+		} catch (error) {
+			showError(
+				getApiErrorMessage(error, "Failed to refresh copy matrix")
+			);
+		} finally {
+			setRefreshingId(null);
+		}
 	};
 
 	const goToView = (row) => {
@@ -422,12 +446,15 @@ const CopyMatrixList = () => {
 					onDownload={handleDownload}
 					onDelete={(row) => setDeleteTarget(row)}
 					onClone={(row) => setCloneTarget(row)}
+					onRefresh={handleRefresh}
+					refreshingId={refreshingId}
 					tooltips={{
 						edit: "Edit copy matrix",
 						view: "View copy matrix",
 						download: "Download CSV",
 						delete: "Delete copy matrix",
 						clone: "Clone copy matrix",
+						refresh: "Refresh from source",
 					}}
 				/>
 				<div className="px-6">

@@ -122,6 +122,14 @@ export function fillColumnValueLocal(rows, column, value, rowIds) {
 	}));
 }
 
+const EXTRACT_WORD_POSITIONS = {
+	"First word": 0,
+	"Second word": 1,
+	"Third word": 2,
+	"Fourth word": 3,
+	"Fifth word": 4,
+};
+
 /** Expand [Column] / [SN] template using row data. */
 export function expandTemplate(template, rowData, sn) {
 	return cellText(
@@ -144,9 +152,33 @@ export function generateTextLocal(rows, targetColumn, template, rowIds) {
 	}));
 }
 
+function extractFromSourceValue(sourceValue, template, splitBy) {
+	const separator = String(splitBy ?? "");
+	const format = separator === "" ? "" : cellText(template);
+	const normalizedSource = cellText(sourceValue);
+	if (!format) {
+		return sourceValue == null ? "" : String(sourceValue);
+	}
+
+	const words = (
+		separator === " "
+			? normalizedSource.split(/\s+/)
+			: normalizedSource.split(separator)
+	)
+		.map((word) => word.trim())
+		.filter(Boolean);
+
+	return cellText(
+		format.replace(
+			/\[([^\[\]]+)\]/g,
+			(_match, token) => words[EXTRACT_WORD_POSITIONS[token]] ?? ""
+		)
+	);
+}
+
 /**
- * Simple extract: use template if provided, else copy sourceColumn.
- * splitBy: take first segment when set.
+ * Extract from another column using the same split + [First word] rules
+ * as the preview modal and the server.
  */
 export function copyFromColumnLocal(
 	rows,
@@ -157,19 +189,17 @@ export function copyFromColumnLocal(
 	rowIds
 ) {
 	const targets = selectTargetRows(rows, rowIds);
-	const custom = cellText(template);
-	return targets.map((row, index) => {
+	return targets.map((row) => {
 		const values = rowValues(row);
-		let value = custom
-			? expandTemplate(custom, values, index + 1)
-			: cellText(values[sourceColumn]);
-		if (splitBy) {
-			const parts = String(value).split(String(splitBy));
-			value = cellText(parts[0] ?? "");
-		}
 		return {
 			rowId: String(row._id),
-			rowData: { [targetColumn]: value },
+			rowData: {
+				[targetColumn]: extractFromSourceValue(
+					values[sourceColumn],
+					template,
+					splitBy
+				),
+			},
 		};
 	});
 }

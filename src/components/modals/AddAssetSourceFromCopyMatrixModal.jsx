@@ -8,7 +8,7 @@ import {
 	useFinishCopyMatrixMutation,
 } from "../../store/services/copyMatrix";
 import { formInputClass, modalCancelBtnClass } from "../../utils/formStyles";
-import { showError, showWarning } from "../../utils/toastMsg";
+import { showError } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 const AddAssetSourceFromCopyMatrixModal = ({
@@ -18,6 +18,7 @@ const AddAssetSourceFromCopyMatrixModal = ({
 }) => {
 	const navigate = useNavigate();
 	const dropdownRef = useRef(null);
+	const didPrefillRef = useRef(false);
 	const [search, setSearch] = useState("");
 	const [selectedId, setSelectedId] = useState("");
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -35,10 +36,12 @@ const AddAssetSourceFromCopyMatrixModal = ({
 		useFinishCopyMatrixMutation();
 
 	useEffect(() => {
-		if (!isOpen) return;
-		setSearch("");
-		setSelectedId("");
-		setIsDropdownOpen(false);
+		if (!isOpen) {
+			didPrefillRef.current = false;
+			setSearch("");
+			setSelectedId("");
+			setIsDropdownOpen(false);
+		}
 	}, [isOpen]);
 
 	useEffect(() => {
@@ -58,16 +61,45 @@ const AddAssetSourceFromCopyMatrixModal = ({
 			document.removeEventListener("mousedown", handleClickOutside);
 	}, [isDropdownOpen]);
 
+	const namedMatrices = useMemo(
+		() =>
+			(matrices || []).filter((matrix) =>
+				String(matrix.name || "").trim()
+			),
+		[matrices]
+	);
+
+	const recentMatrices = useMemo(
+		() =>
+			[...namedMatrices].sort((a, b) => {
+				const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+				const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+				return bTime - aTime;
+			}),
+		[namedMatrices]
+	);
+
+	const selectedName = useMemo(() => {
+		const selected = recentMatrices.find(
+			(matrix) => matrix._id === selectedId
+		);
+		return String(selected?.name || "").trim().toLowerCase();
+	}, [recentMatrices, selectedId]);
+
 	const filteredMatrices = useMemo(() => {
 		const query = search.trim().toLowerCase();
-		const sorted = [...matrices].sort((a, b) =>
-			String(a.name || "").localeCompare(String(b.name || ""))
-		);
-		if (!query) return sorted;
-		return sorted.filter((matrix) =>
+		if (!query || query === selectedName) return recentMatrices;
+		return recentMatrices.filter((matrix) =>
 			String(matrix.name || "").toLowerCase().includes(query)
 		);
-	}, [matrices, search]);
+	}, [recentMatrices, search, selectedName]);
+
+	useEffect(() => {
+		if (!isOpen || didPrefillRef.current || !recentMatrices[0]) return;
+		didPrefillRef.current = true;
+		setSelectedId(recentMatrices[0]._id);
+		setSearch(recentMatrices[0].name || "");
+	}, [isOpen, recentMatrices]);
 
 	const handleSearchChange = (value) => {
 		setSearch(value);
@@ -94,23 +126,15 @@ const AddAssetSourceFromCopyMatrixModal = ({
 			selectedMatrix?.name || search.trim();
 
 		try {
-			// Do not override CM unique column — backend uses matrix.uniqueColumn.
 			const result = await finishCopyMatrix({
 				id: selectedId,
 				forceNewAssetSource: true,
-				...(selectedMatrix?.uniqueColumn
-					? { uniqueColumn: selectedMatrix.uniqueColumn }
-					: {}),
 			}).unwrap();
 
 			const assetUploadId = result?.data?.assetUploadId;
 			if (!assetUploadId) {
 				showError("Asset source was not created. Please try again.");
 				return;
-			}
-
-			if (result?.data?.uniqueColumnNotice) {
-				showWarning(result.data.uniqueColumnNotice);
 			}
 
 			onClose();
@@ -163,26 +187,25 @@ const AddAssetSourceFromCopyMatrixModal = ({
 						value={search}
 						onChange={(e) => handleSearchChange(e.target.value)}
 						onFocus={() => setIsDropdownOpen(true)}
-						placeholder="Search copy matrices..."
+						placeholder={
+							recentMatrices[0]?.name || "Search copy matrices..."
+						}
 						className={`${formInputClass} pl-9`}
 					/>
 
 					{isDropdownOpen && (
-						<div className="absolute left-0 right-0 top-full mt-1 z-20 max-h-64 overflow-y-auto border border-gray-200 rounded-xl bg-white shadow-lg divide-y divide-gray-100">
+						<div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+							<div className="max-h-48 overflow-y-auto overflow-x-hidden overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
 							{loading && (
-								<div className="px-4 py-6 text-center text-sm text-gray-500">
+								<div className="px-4 py-3 text-sm text-gray-500">
 									Loading copy matrices...
 								</div>
 							)}
-							{!loading && filteredMatrices.length === 0 && (
-								<div className="px-4 py-6 text-center text-sm text-gray-500">
-									{matrices.length === 0
-										? "No saved copy matrices found."
-										: "No copy matrices match your search."}
-								</div>
-							)}
 							{!loading &&
-								filteredMatrices.map((matrix) => {
+								(filteredMatrices.length > 0
+									? filteredMatrices
+									: recentMatrices
+								).map((matrix) => {
 									const isSelected =
 										selectedId === matrix._id;
 									return (
@@ -205,6 +228,7 @@ const AddAssetSourceFromCopyMatrixModal = ({
 										</button>
 									);
 								})}
+							</div>
 						</div>
 					)}
 				</div>

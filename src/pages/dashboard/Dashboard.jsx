@@ -99,19 +99,45 @@ const Dashboard = () => {
 					</p>
 				)}
 
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-					{displayedCampaigns.map((campaign, index) => (
-						<CampaignCard
-							key={campaign.id}
-							name={campaign.accountName}
-							client={campaign.clientName}
-							lastUpdated={campaign.lastUpdated}
-							status={campaign.accountStatus}
-							priority={index === 0}
-							onClick={() => handleCardClick(campaign.id)}
-						/>
-					))}
-				</div>
+				{!isLoading && !isError && displayedCampaigns.length === 0 ? (
+					<div className="flex flex-1 min-h-[280px] items-center justify-center">
+						<div className="text-center max-w-md">
+							<p className="text-lg font-semibold text-[#1A1C1E]">
+								{accounts.length === 0
+									? "No accounts yet"
+									: "No accounts match the selected filter"}
+							</p>
+							<p className="mt-2 text-sm text-gray-500">
+								{accounts.length === 0
+									? "Add an account to get started. Accounts created here are available to every user."
+									: "Try a different filter to see your accounts."}
+							</p>
+							{accounts.length === 0 ? (
+								<button
+									type="button"
+									onClick={() => setIsModalOpen(true)}
+									className="mt-6 px-6 py-3 bg-[#B600C9] text-white font-bold rounded-xl hover:bg-[#9E00AD] shadow-lg shadow-[#B600C9]/20 transition-all"
+								>
+									Add Account
+								</button>
+							) : null}
+						</div>
+					</div>
+				) : (
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+						{displayedCampaigns.map((campaign, index) => (
+							<CampaignCard
+								key={campaign.id}
+								name={campaign.accountName}
+								client={campaign.clientName}
+								lastUpdated={campaign.lastUpdated}
+								status={campaign.accountStatus}
+								priority={index === 0}
+								onClick={() => handleCardClick(campaign.id)}
+							/>
+						))}
+					</div>
+				)}
 			</div>
 			{isModalOpen ? (
 				<Suspense fallback={null}>
