@@ -6,7 +6,7 @@ import React, {
 	useRef,
 } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
-import AssetAccountHeader from "../../components/navigation/AssetAccountHeader";
+import Breadcrumbs from "../../components/navigation/BreadCrumbs";
 import {
 	BackButton,
 	SaveButton,
@@ -369,12 +369,15 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		const extraAdded = (refreshAddedRows || []).map((row) => {
 			const rowIndex = row.rowIndex;
 			const rowId = `${CM_REFRESH_ROW_PREFIX}${rowIndex}`;
-			const rowData = row.rowData || row;
+			const rowData = {
+				...(row.rowData || row),
+				...(pendingEdits[rowId] || {}),
+			};
 			return {
+				...rowData,
 				_id: rowId,
 				rowIndex,
 				primaryKey: String(rowIndex),
-				...rowData,
 				[AUTO_ROW_ID_COLUMN]:
 					rowData[AUTO_ROW_ID_COLUMN] || String(rowIndex),
 			};
@@ -693,6 +696,60 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		return () => window.clearTimeout(timer);
 	}, [accountId, id, readOnly, pendingEdits, name, asset?.name, isDraft]);
 
+	const snapshotRowData = (row) => {
+		const rowData = {};
+		for (const [key, value] of Object.entries(row || {})) {
+			if (
+				key === "_id" ||
+				key === "rowIndex" ||
+				key === "primaryKey"
+			) {
+				continue;
+			}
+			rowData[key] = value;
+		}
+		return rowData;
+	};
+
+	const unsavedImageRows = (selectedIds) => {
+		const selected = selectedIds?.length
+			? new Set(selectedIds.map(String))
+			: null;
+		return rows
+			.filter((row) => isCopyMatrixRefreshRowId(row._id))
+			.filter((row) => !selected || selected.has(String(row._id)))
+			.map((row) => ({
+				_id: String(row._id),
+				rowIndex: row.rowIndex,
+				rowData: snapshotRowData(row),
+			}));
+	};
+
+	const collectAddedRowPatches = () => {
+		const flushed = tableRef.current?.flushActiveEdit?.();
+		const merged = { ...pendingEditsRef.current };
+		if (flushed?.rowId && isCopyMatrixRefreshRowId(flushed.rowId)) {
+			merged[flushed.rowId] = {
+				...merged[flushed.rowId],
+				...flushed.rowData,
+			};
+		}
+		return (refreshAddedRows || [])
+			.map((row) => {
+				const rowId = `${CM_REFRESH_ROW_PREFIX}${row.rowIndex}`;
+				const edit = merged[rowId];
+				if (!edit || typeof edit !== "object") return null;
+				const rowData = { ...edit };
+				delete rowData._id;
+				delete rowData.rowIndex;
+				delete rowData.primaryKey;
+				delete rowData[AUTO_ROW_ID_COLUMN];
+				if (Object.keys(rowData).length === 0) return null;
+				return { rowIndex: row.rowIndex, rowData };
+			})
+			.filter(Boolean);
+	};
+
 	const collectEdits = useCallback(() => {
 		const flushed = tableRef.current?.flushActiveEdit?.();
 		const merged = { ...pendingEditsRef.current };
@@ -768,7 +825,11 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				});
 			}
 			for (const addedRow of refreshAddedRows || []) {
-				const rowData = addedRow.rowData || addedRow;
+				const rowId = `${CM_REFRESH_ROW_PREFIX}${addedRow.rowIndex}`;
+				const rowData = {
+					...(addedRow.rowData || addedRow),
+					...(pendingEditsRef.current[rowId] || {}),
+				};
 				const filled = Object.entries(rowData).filter(
 					([column, value]) =>
 						column &&
@@ -1074,6 +1135,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				edits,
 				changes: await buildReviewChanges(edits, deletedRows),
 				deletedRows,
+				addedRowPatches: copyMatrixRefresh
+					? collectAddedRowPatches()
+					: [],
 				assetName: displayName || asset?.name || "",
 				campaignName: asset?.copyMatrixName || "",
 				copyMatrixRefresh,
@@ -1119,7 +1183,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		try {
 			try {
 				if (copyMatrixRefreshRef.current) {
-					await applyAssetSourceRefresh(id).unwrap();
+					await applyAssetSourceRefresh({
+						id,
+						addedRowPatches: collectAddedRowPatches(),
+					}).unwrap();
 					copyMatrixRefreshRef.current = false;
 					setRefreshAddedRows([]);
 					setRefreshRemovedRows([]);
@@ -1423,17 +1490,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			}
 
 			if (alsoUpdate && targetColumn && template) {
+				const selectedExisting = selected.filter(
+					(rowId) => !isCopyMatrixRefreshRowId(rowId)
+				);
 				const applyResult = await applyColumnImages({
 					id,
 					targetColumn,
 					template,
 					folder,
-					rowIds: selected.length ? selected : undefined,
+					rowIds: selected.length ? selectedExisting : undefined,
+					extraRows: unsavedImageRows(selected),
 					dryRun: true,
 					rowOverrides: buildTemplateRowOverrides(
 						collectEdits(),
 						template,
-						selected
+						selectedExisting
 					),
 				}).unwrap();
 				const patches = (applyResult?.updates || []).map((u) => ({
@@ -1518,6 +1589,9 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			const selected = isAssetImagesPanel
 				? []
 				: getSelectedRowIds().map(String);
+			const selectedExisting = selected.filter(
+				(rowId) => !isCopyMatrixRefreshRowId(rowId)
+			);
 			const result = await applyColumnImages({
 				id,
 				targetColumn,
@@ -1525,12 +1599,13 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				prefixColumn: referenceColumn,
 				template,
 				folder,
-				rowIds: selected.length ? selected : undefined,
+				rowIds: selected.length ? selectedExisting : undefined,
+				extraRows: unsavedImageRows(selected),
 				dryRun: true,
 				rowOverrides: buildTemplateRowOverrides(
 					collectEdits(),
 					template,
-					selected
+					selectedExisting
 				),
 			}).unwrap();
 			if (!result?.updates?.length) {
@@ -1939,71 +2014,48 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		navigate(toPath);
 	};
 
+	const handleHeaderBack = () => handleLeave(returnPath);
+	const primaryLabel = isBusy ? "Saving..." : "Save";
+
 	return (
-		<div className="bg-white min-h-full">
-			<AssetAccountHeader
-				breadcrumbs={breadcrumbs}
-				actions={
-					readOnly
-						? [
-								<BackButton
-									key="back"
-									label="Back to list"
-									onClick={() => navigate("/asset-sources")}
-								/>,
-						  ]
-						: [
-								<BackButton
-									key="back"
-									label="Back"
-									onClick={() => handleLeave(returnPath)}
-								/>,
-								<CancelButton
-									key="cancel"
-									onClick={() => handleLeave("/asset-sources")}
-								/>,
+		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+			<div className="shrink-0 border-b bg-[#F0E9FA] px-8 py-4">
+				<Breadcrumbs items={breadcrumbs} />
+				<div className="mt-2 flex justify-between items-center">
+					<div>
+						<h1 className="text-2xl font-bold text-[#413d42]">
+							Asset Source Preview
+						</h1>
+						<p className="text-sm text-gray-500 mt-1">
+							{readOnly
+								? "View only"
+								: "Edit the asset source, then Save to return to the list"}
+						</p>
+					</div>
+					<div className="flex gap-3 items-center">
+						<BackButton label="Back" onClick={handleHeaderBack} />
+						{!readOnly && (
+							<>
+								<CancelButton onClick={handleHeaderBack} />
 								<SaveButton
-									key="save"
-									label={
-										isDraft
-											? isBusy
-												? "Saving..."
-												: "Finish"
-											: isSaving
-											? "Saving..."
-										: isPreparingReview
-										? "Preparing review..."
-											: "Save changes"
-									}
+									label={primaryLabel}
 									onClick={
-										isDraft ? handleFinish : handleSaveChanges
+										isDraft
+											? handleFinish
+											: handleSaveChanges
 									}
 									disabled={
-										isBusy || (isDraft && !canFinishDraft)
+										isBusy ||
+										(isDraft && !canFinishDraft)
 									}
-								/>,
-						  ]
-				}
-			/>
-
-			<div className="px-8 py-4 border-b">
-				<h1 className="text-2xl font-bold text-[#413d42]">
-					{displayName ||
-						savedName ||
-						(readOnly ? "Asset Source View" : "Asset Source Edit")}
-				</h1>
-				<p className="text-sm text-gray-500 mt-1">
-					{readOnly
-						? "View only — use the pencil icon on the list to edit"
-						: isDraft
-						? requireNewAssetSourceName || isRecreateDraft
-							? "Edit the asset source name if needed, edit cells, then Finish"
-							: "Set the asset source name, edit cells, then Finish"
-						: "Double-click a cell to edit · Use column menu for tools · Save when done"}
-				</p>
+								/>
+							</>
+						)}
+					</div>
+				</div>
 			</div>
 
-			<div className="px-8 py-4 border-b bg-gray-50">
+			<div className="shrink-0 border-b bg-gray-50 px-8 py-4">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div className="flex min-h-10 flex-1 flex-wrap items-center gap-x-8 gap-y-3">
 						<div
@@ -2084,9 +2136,10 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				</div>
 			</div>
 
-			<div className="px-6 py-4">
+			<div className="flex min-h-0 flex-1 flex-col px-6 pb-2 pt-3">
 				<EditableSheetTable
 					ref={tableRef}
+					fill
 					columns={columns}
 					rows={rows}
 					loading={loading}

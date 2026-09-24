@@ -10,8 +10,11 @@ const AssetViewTabs = () => {
 	const navigate = useNavigate();
 
 	return (
-		<div className="flex gap-3" aria-label="Workspace views">
-			{TABS.map((tab) => {
+		<div
+			className="inline-flex h-10 overflow-hidden rounded-md border border-[#751FD4] bg-white"
+			aria-label="Workspace views"
+		>
+			{TABS.map((tab, index) => {
 				const isActive = pathname.startsWith(tab.path);
 
 				return (
@@ -20,10 +23,12 @@ const AssetViewTabs = () => {
 						type="button"
 						aria-current={isActive ? "page" : undefined}
 						onClick={() => navigate(tab.path)}
-						className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
+						className={`h-full w-[200px] text-sm font-medium transition-colors ${
+							index > 0 ? "border-l border-[#751FD4]" : ""
+						} ${
 							isActive
-								? "bg-[#B600C9] text-white hover:bg-[#9a00ab]"
-								: "bg-white text-[#B600C9] border border-[#B600C9] hover:bg-purple-50"
+								? "bg-[#751FD4] text-white hover:bg-[#6419BC]"
+								: "bg-white text-[#751FD4] hover:bg-[#F4EDFC]"
 						}`}
 					>
 						{tab.label}

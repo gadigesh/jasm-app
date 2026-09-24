@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { useGetGsheetTabsMutation } from "../../store/services/copyMatrix";
@@ -8,6 +8,7 @@ import UploadProgressBar from "../common/UploadProgressBar";
 import { CloudUpload, Edit } from "lucide-react";
 import { showError } from "../../utils/toastMsg";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { formatColumnStructureMessage } from "../../utils/copyMatrixRefresh";
 import { submitFormWithProgress } from "../../utils/uploadWithProgress";
 import {
 	formInputLgClass,
@@ -16,14 +17,23 @@ import {
 } from "../../utils/formStyles";
 import { useDropzone } from "react-dropzone";
 
-const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
+const AddCopyMatrixUploadModal = ({
+	isOpen,
+	onClose,
+	accountId,
+	copyMatrixId = null,
+	initialUrl = "",
+	onUpdated,
+	onColumnError,
+}) => {
 	const navigate = useNavigate();
 	const dispatch = useDispatch();
 	const [getGsheetTabs, { isLoading: isLoadingTabs }] =
 		useGetGsheetTabsMutation();
 	const [activeTab, setActiveTab] = useState("file");
 	const [file, setFile] = useState(null);
-	const [url, setUrl] = useState("");
+	const [url, setUrl] = useState(initialUrl || "");
+	const [columnError, setColumnError] = useState("");
 	const [sheetTabs, setSheetTabs] = useState([]);
 	const [selectedSheetGid, setSelectedSheetGid] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,6 +44,7 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 		if (acceptedFiles?.length) {
 			setFile(acceptedFiles[0]);
 			setActiveTab("file");
+			setColumnError("");
 			setUrl("");
 			setSheetTabs([]);
 			setSelectedSheetGid("");
@@ -54,13 +65,34 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 		maxSize: 10 * 1024 * 1024,
 	});
 
-	const canProceed =
-		(activeTab === "file" && file) ||
-		(activeTab === "url" && url.trim() && selectedSheetGid !== "");
+	const fileOnly = Boolean(copyMatrixId);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		setColumnError("");
+		if (fileOnly) {
+			setActiveTab("file");
+			setUrl("");
+			setSheetTabs([]);
+			setSelectedSheetGid("");
+			return;
+		}
+		setUrl(initialUrl || "");
+	}, [isOpen, fileOnly, initialUrl]);
+
+	const canProceed = fileOnly
+		? Boolean(file)
+		: (activeTab === "file" && file) ||
+			(activeTab === "url" && url.trim() && selectedSheetGid !== "");
 
 	const resetProgress = () => {
 		setUploadProgress(0);
 		setUploadPhase("processing");
+	};
+
+	const clearColumnError = () => {
+		setColumnError("");
+		onColumnError?.("");
 	};
 
 	const loadSheetTabs = async (sheetUrl) => {
@@ -101,13 +133,14 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 		}
 	};
 
-	const handleClose = () => {
-		if (isSubmitting) return;
+	const handleClose = (force = false) => {
+		if (isSubmitting && !force) return;
 		setFile(null);
 		setUrl("");
 		setActiveTab("file");
 		setSheetTabs([]);
 		setSelectedSheetGid("");
+		setColumnError("");
 		resetProgress();
 		onClose();
 	};
@@ -131,10 +164,13 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 
 		setIsSubmitting(true);
 		resetProgress();
+		clearColumnError();
 
 		try {
 			const result = await submitFormWithProgress({
-				path: "/copy-matrix/preview",
+				path: copyMatrixId
+					? `/copy-matrix/${copyMatrixId}/source`
+					: "/copy-matrix/preview",
 				formData,
 				hasFile: isFileUpload,
 				onProgress: ({ percent, phase }) => {
@@ -144,9 +180,26 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 			});
 
 			dispatch(api.util.invalidateTags(["CopyMatrices"]));
-			handleClose();
+			if (copyMatrixId) {
+				const review = result?.data;
+				handleClose(true);
+				onUpdated?.(review);
+				return;
+			}
+			handleClose(true);
 			navigate(`/copy-matrix/${result.data.copyMatrixId}/preview`);
 		} catch (error) {
+			const structureMessage = formatColumnStructureMessage(
+				error?.data || {}
+			);
+			if (
+				error?.data?.deletedColumns?.length ||
+				error?.data?.editedColumns?.length
+			) {
+				setColumnError(structureMessage);
+				onColumnError?.(structureMessage);
+				return;
+			}
 			showError(
 				getApiErrorMessage(
 					error,
@@ -162,12 +215,18 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 	return (
 		<ASUploadPage
 			isOpen={isOpen}
-			onClose={handleClose}
+			onClose={() => handleClose()}
 			disableClose={isSubmitting}
-			title="Upload your Copy Matrix here."
+			title={
+				copyMatrixId
+					? "Upload a new source for this copy matrix."
+					: "Upload your Copy Matrix here."
+			}
 			maxWidth="max-w-2xl"
 		>
 			<div className={isSubmitting ? "pointer-events-none select-none" : ""}>
+			{!fileOnly && (
+			<>
 			<div className="mb-4">
 				<label className="block text-sm font-bold text-gray-900 mb-2">
 					Google Sheet URL
@@ -178,6 +237,7 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 					onChange={(e) => {
 						setUrl(e.target.value);
 						setActiveTab("url");
+						clearColumnError();
 						if (e.target.value) setFile(null);
 					}}
 					onBlur={(e) => loadSheetTabs(e.target.value)}
@@ -222,6 +282,8 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 				<span className="text-xs text-gray-400 uppercase">OR</span>
 				<div className="h-px bg-gray-200 flex-1" />
 			</div>
+			</>
+			)}
 
 			<div
 				{...getRootProps()}
@@ -292,12 +354,17 @@ const AddCopyMatrixUploadModal = ({ isOpen, onClose, accountId }) => {
 				percent={uploadProgress}
 				phase={uploadPhase}
 			/>
+			{columnError ? (
+				<p className="mt-3 text-sm font-medium text-red-600">
+					{columnError}
+				</p>
+			) : null}
 			</div>
 
 			<div className="flex justify-end gap-3 mt-4">
 				<button
 					type="button"
-					onClick={handleClose}
+					onClick={() => handleClose()}
 					disabled={isSubmitting}
 					className={`${modalCancelBtnClass} disabled:opacity-40 disabled:cursor-not-allowed`}
 				>

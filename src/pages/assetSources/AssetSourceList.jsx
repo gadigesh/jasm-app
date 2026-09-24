@@ -286,6 +286,20 @@ const AssetSourceList = () => {
 		}
 	};
 
+	const handleCopyLink = async (row) => {
+		const link = String(row?.fileRef || "").trim();
+		if (!link) {
+			showError("No Google Sheet link is available");
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(link);
+			showSuccess("Link copied");
+		} catch {
+			showError("Could not copy the link");
+		}
+	};
+
 	// 4. TRANSFORM & SORT DATA
 	const filteredAndSortedData = useMemo(() => {
 		if (!uploads) return [];
@@ -323,6 +337,8 @@ const AssetSourceList = () => {
 						(Number(item.modifiedRowCount) || 0) +
 						(Number(item.removedRowCount) || 0) +
 						(Number(item.newColumnCount) || 0),
+				fileRef: item.fileRef || "",
+				showCopyLink: true,
 			};
 		});
 
@@ -543,11 +559,21 @@ const AssetSourceList = () => {
 					caption="Asset source list"
 					loading={isLoading && !isFetching && uploads.length === 0}
 					onEdit={handleEditClick}
-					onView={(row) =>
+					onView={(row) => {
+						const matrixId =
+							row.copyMatrixId ||
+							row.mappedCopyMatrix?.id ||
+							row.mappedCopyMatrices?.[0]?.id;
+						if (!matrixId) {
+							showError(
+								"No copy matrix is linked to this asset source"
+							);
+							return;
+						}
 						navigate(
-							`/asset-sources/${row._id}/preview?mode=view`
-						)
-					}
+							`/copy-matrix/${matrixId}/preview?mode=view`
+						);
+					}}
 					onDownload={async (row) => {
 						try {
 							await downloadFromApi(
@@ -564,6 +590,7 @@ const AssetSourceList = () => {
 					onDelete={(row) => setDeleteTarget(row)}
 					onClone={(row) => setCloneTarget(row)}
 					onRefresh={handleRefresh}
+					onCopyLink={handleCopyLink}
 					refreshingId={refreshingId}
 					tooltips={{
 						edit: "Edit asset source",
@@ -572,9 +599,10 @@ const AssetSourceList = () => {
 						delete: "Delete asset source",
 						clone: "Clone asset source",
 						refresh: "Refresh",
+						copyLink: "Copy link",
 					}}
 				/>
-				<div className="px-6">
+				<div className="px-6 py-3">
 					<div className="flex items-center justify-between">
 						<RowPerPage value={rowsPerPage} onChange={setRowsPerPage} />
 						<Pagination

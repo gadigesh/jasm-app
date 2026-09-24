@@ -31,10 +31,6 @@ const CopyMatrixPreview = lazy(() =>
 const CopyMatrixWorkflow = lazy(() =>
 	import("./pages/copyMatrix/CopyMatrixWorkflow")
 );
-const CopyMatrixRefreshReview = lazy(() =>
-	import("./pages/copyMatrix/CopyMatrixRefreshReview")
-);
-
 const RouteLoading = () => (
 	<div className="flex min-h-[40vh] items-center justify-center text-sm text-gray-500">
 		Loading…
@@ -61,10 +57,6 @@ function AppContent() {
 							<Route
 								path="copy-matrix/:id/preview"
 								element={<CopyMatrixPreview />}
-							/>
-							<Route
-								path="copy-matrix/:id/refresh"
-								element={<CopyMatrixRefreshReview />}
 							/>
 							<Route
 								path="copy-matrix/:id/workflow"

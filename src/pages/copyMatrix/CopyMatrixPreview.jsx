@@ -7,6 +7,8 @@ import {
 	CancelButton,
 	ExportButton,
 } from "../../components/navigation/HeaderActions";
+import Breadcrumbs from "../../components/navigation/BreadCrumbs";
+import useBreadcrumbs from "../../hooks/useBreadCrumbs";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import EditableSheetTable from "../../components/common/EditableSheetTable";
 import ColumnValueFilterPanel from "../../components/common/ColumnValueFilterPanel";
@@ -73,8 +75,30 @@ import {
 	buildTemplateRowOverrides,
 } from "../../utils/localSheetEdits";
 
+function existingRowDraftMap(pendingMap, baseline, editedRowIds) {
+	const draft = {};
+	for (const rowId of editedRowIds || []) {
+		const id = String(rowId || "");
+		if (!id || id.startsWith("refresh-new-")) continue;
+		const data = pendingMap?.[id];
+		if (!data || typeof data !== "object") continue;
+		const base = baseline?.[id] || {};
+		const next = { ...data };
+		for (const [key, value] of Object.entries(base)) {
+			if (normalizeCellText(next[key]) === normalizeCellText(value)) {
+				delete next[key];
+			}
+		}
+		delete next._id;
+		delete next.rowIndex;
+		if (Object.keys(next).length > 0) draft[id] = next;
+	}
+	return draft;
+}
+
 const CopyMatrixPreview = () => {
 	const { id } = useParams();
+	const breadcrumbs = useBreadcrumbs();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [searchParams] = useSearchParams();
@@ -96,6 +120,16 @@ const CopyMatrixPreview = () => {
 	const [pendingEdits, setPendingEdits] = useState({});
 	const hasSavedChangesRef = useRef(false);
 	const pendingEditsRef = useRef({});
+	const [appendedRows, setAppendedRows] = useState([]);
+	const [removedRowIds, setRemovedRowIds] = useState([]);
+	const [refreshColumns, setRefreshColumns] = useState(null);
+	const appendedRowsRef = useRef([]);
+	const removedRowIdsRef = useRef([]);
+	const refreshColumnsRef = useRef(null);
+	const landingIndexRef = useRef(null);
+	const refreshBaselineRef = useRef(null);
+	const userEditedExistingRowIdsRef = useRef(new Set());
+	const [existingRowEdited, setExistingRowEdited] = useState(false);
 	const [isSavingOp, setIsSavingOp] = useState(false);
 	const [saveProgress, setSaveProgress] = useState(0);
 	const [savePhase, setSavePhase] = useState("saving");
@@ -108,6 +142,10 @@ const CopyMatrixPreview = () => {
 	const [deletingRow, setDeletingRow] = useState(null);
 	const [columnModal, setColumnModal] = useState(null);
 	const [renamingColumn, setRenamingColumn] = useState(null);
+	const [columnGuardMessage, setColumnGuardMessage] = useState("");
+	const protectedColumnsRef = useRef(null);
+	const blockedEditsRef = useRef(new Set());
+	const blockedDeletesRef = useRef(new Set());
 	const [localUnsyncedColumns, setLocalUnsyncedColumns] = useState(
 		() => new Set()
 	);
@@ -236,14 +274,21 @@ const CopyMatrixPreview = () => {
 	const [deleteColumn, { isLoading: isDeletingColumn }] =
 		useDeleteCopyMatrixColumnMutation();
 
-	const columns = useMemo(
-		() => rowsData?.columns || matrix?.columns || [],
-		[rowsData, matrix]
-	);
+	const columns = useMemo(() => {
+		const base = rowsData?.columns || matrix?.columns || [];
+		if (!refreshColumns?.length) return base;
+		const names = refreshColumns.filter(
+			(column) => column && column !== AUTO_ROW_ID_COLUMN
+		);
+		return [AUTO_ROW_ID_COLUMN, ...names];
+	}, [rowsData, matrix, refreshColumns]);
 
 	const rows = useMemo(() => {
-		const serverRows = rowsData?.rows || [];
-		return serverRows.map((row) => {
+		const removed = new Set(removedRowIds.map(String));
+		const serverRows = (rowsData?.rows || []).filter(
+			(row) => !removed.has(String(row._id))
+		);
+		const mapped = serverRows.map((row) => {
 			const edit = pendingEdits[row._id];
 			const merged = edit ? { ...row, ...edit } : { ...row };
 			const normalized = { ...merged };
@@ -255,7 +300,30 @@ const CopyMatrixPreview = () => {
 			}
 			return normalized;
 		});
-	}, [rowsData, pendingEdits]);
+		const totalPages = rowsData?.pagination?.totalPages || 1;
+		if (page < totalPages || appendedRows.length === 0) return mapped;
+		return [
+			...mapped,
+			...appendedRows.map((row) => {
+				const normalized = {
+					...row.rowData,
+					_id: row.id,
+					rowIndex: row.rowIndex,
+					[AUTO_ROW_ID_COLUMN]: String(row.rowIndex),
+				};
+				for (const col of Object.keys(normalized)) {
+					if (col === "_id" || col === "rowIndex") continue;
+					if (
+						typeof normalized[col] === "string" ||
+						normalized[col] == null
+					) {
+						normalized[col] = normalizeCellText(normalized[col]);
+					}
+				}
+				return normalized;
+			}),
+		];
+	}, [rowsData, pendingEdits, removedRowIds, appendedRows, page]);
 
 	const pagination = rowsData?.pagination || {
 		page: 1,
@@ -312,6 +380,32 @@ const CopyMatrixPreview = () => {
 			!syncedColumnNames.has(column),
 		[isSynced, syncedColumnNames, localUnsyncedColumns]
 	);
+
+	useEffect(() => {
+		if (protectedColumnsRef.current || !matrix?.columns?.length) return;
+		protectedColumnsRef.current = new Set(
+			matrix.columns.filter(
+				(column) => column && column !== AUTO_ROW_ID_COLUMN
+			)
+		);
+	}, [matrix?.columns]);
+
+	const reportBlockedColumns = useCallback(() => {
+		const parts = [];
+		if (blockedDeletesRef.current.size) {
+			parts.push(
+				`Deleted columns: ${[...blockedDeletesRef.current].join(", ")}`
+			);
+		}
+		if (blockedEditsRef.current.size) {
+			parts.push(
+				`Edited columns: ${[...blockedEditsRef.current].join(", ")}`
+			);
+		}
+		const message = parts.join(". ");
+		setColumnGuardMessage(message);
+		if (message) showError(message);
+	}, []);
 	const canEditMatrixName =
 		matrixReady && !readOnly && !isSynced && !creatingNewAssetSource;
 	const isUnsyncedFinalized =
@@ -352,7 +446,26 @@ const CopyMatrixPreview = () => {
 		canEditMatrixName,
 	]);
 
+	const markExistingRowEdited = useCallback((rowId) => {
+		const id = String(rowId || "");
+		if (!id || id.startsWith("refresh-new-")) return;
+		if (userEditedExistingRowIdsRef.current.has(id)) return;
+		userEditedExistingRowIdsRef.current.add(id);
+		setExistingRowEdited(true);
+	}, []);
+
 	const handleCellChange = useCallback((rowId, rowData) => {
+		if (String(rowId).startsWith("refresh-new-")) {
+			const next = appendedRowsRef.current.map((row) =>
+				row.id === String(rowId)
+					? { ...row, rowData: { ...row.rowData, ...rowData } }
+					: row
+			);
+			appendedRowsRef.current = next;
+			setAppendedRows(next);
+			return;
+		}
+		markExistingRowEdited(rowId);
 		const next = {
 			...pendingEditsRef.current,
 			[rowId]: {
@@ -362,19 +475,34 @@ const CopyMatrixPreview = () => {
 		};
 		pendingEditsRef.current = next;
 		setPendingEdits(next);
-	}, []);
+	}, [markExistingRowEdited]);
 
 	const commitLocalPatches = useCallback((patches) => {
 		if (!patches?.length) return 0;
+		for (const patch of patches) {
+			markExistingRowEdited(patch?.rowId || patch?._id);
+		}
 		const next = applyRowPatches(pendingEditsRef.current, patches);
 		pendingEditsRef.current = next;
 		setPendingEdits(next);
 		return patches.length;
-	}, []);
+	}, [markExistingRowEdited]);
 
 	useEffect(() => {
 		pendingEditsRef.current = pendingEdits;
 	}, [pendingEdits]);
+
+	useEffect(() => {
+		appendedRowsRef.current = appendedRows;
+	}, [appendedRows]);
+
+	useEffect(() => {
+		removedRowIdsRef.current = removedRowIds;
+	}, [removedRowIds]);
+
+	useEffect(() => {
+		refreshColumnsRef.current = refreshColumns;
+	}, [refreshColumns]);
 
 	// Resume locally saved cell edits (create draft or completed).
 	useEffect(() => {
@@ -382,22 +510,39 @@ const CopyMatrixPreview = () => {
 		const draft = readEditDraft("cm", accountId, { entityId: id });
 		if (!draft || String(draft._id) !== String(id)) return;
 		const pending = draft.pendingEdits || {};
-		if (Object.keys(pending).length === 0) return;
-		pendingEditsRef.current = pending;
-		setPendingEdits(pending);
+		if (Object.keys(pending).length > 0) {
+			pendingEditsRef.current = pending;
+			setPendingEdits(pending);
+			userEditedExistingRowIdsRef.current = new Set(Object.keys(pending));
+			setExistingRowEdited(true);
+		}
 	}, [accountId, id, skipEditDraft]);
 
-	// Keep a local draft snapshot as the user edits (until Save clears it).
+	// Keep a local draft only after a cell on an existing row changes.
+	// Unsaved refresh approval, including edits to newly approved rows, is not a draft.
 	useEffect(() => {
 		if (!accountId || !id || readOnly) return;
+		const inRefreshSession = refreshBaselineRef.current != null;
 		const hasPending = Object.keys(pendingEdits).length > 0;
-		if (!hasPending && !hasSavedChangesRef.current) return;
+		if (inRefreshSession) {
+			if (!existingRowEdited) return;
+		} else if (!hasPending && !hasSavedChangesRef.current) {
+			return;
+		}
 		const timer = window.setTimeout(() => {
+			const pendingMap = inRefreshSession
+				? existingRowDraftMap(
+						pendingEditsRef.current,
+						refreshBaselineRef.current,
+						userEditedExistingRowIdsRef.current
+					)
+				: pendingEditsRef.current || {};
+			if (inRefreshSession && Object.keys(pendingMap).length === 0) return;
 			writeEditDraft("cm", accountId, {
 				_id: id,
 				name: displayName.trim() || matrix?.name || "Untitled",
 				isCreateDraft: Boolean(isDraft),
-				pendingEdits: pendingEditsRef.current || {},
+				pendingEdits: pendingMap,
 			});
 		}, 400);
 		return () => window.clearTimeout(timer);
@@ -406,6 +551,7 @@ const CopyMatrixPreview = () => {
 		id,
 		readOnly,
 		pendingEdits,
+		existingRowEdited,
 		displayName,
 		matrix?.name,
 		isDraft,
@@ -413,7 +559,7 @@ const CopyMatrixPreview = () => {
 
 	const closeSheetModal = () => setSheetModal(null);
 
-	const scheduleHighlightClear = useCallback(() => {
+	const scheduleHighlightClear = useCallback((duration = 15000) => {
 		if (highlightTimeoutRef.current) {
 			clearTimeout(highlightTimeoutRef.current);
 		}
@@ -421,28 +567,71 @@ const CopyMatrixPreview = () => {
 			setHighlightedRowId(null);
 			setHighlightedColumn(null);
 			setHighlightedCells([]);
-		}, 15000);
+		}, duration);
 	}, []);
 
 	useEffect(() => {
-		const highlights = location.state?.refreshHighlights;
-		if (!highlights) return;
-		const cells = Array.isArray(highlights.cells)
-			? highlights.cells
-			: [];
-		const rowIndexes = Array.isArray(highlights.rowIndexes)
+		const state = location.state || {};
+		const highlights = state.refreshHighlights;
+		const pending = state.refreshPendingEdits;
+		const appended = state.refreshAppendedRows;
+		const removed = state.refreshRemovedRowIds;
+		const nextColumns = state.refreshColumns;
+		const hasStage =
+			(pending && Object.keys(pending).length > 0) ||
+			(Array.isArray(appended) && appended.length > 0) ||
+			(Array.isArray(removed) && removed.length > 0);
+		if (!highlights && !hasStage) return;
+		if (hasStage || highlights) {
+			const source =
+				pending && typeof pending === "object" ? pending : {};
+			refreshBaselineRef.current = Object.fromEntries(
+				Object.entries(source).map(([rowId, data]) => [
+					rowId,
+					{ ...(data || {}) },
+				])
+			);
+			userEditedExistingRowIdsRef.current = new Set();
+			setExistingRowEdited(false);
+		}
+		if (pending && typeof pending === "object") {
+			pendingEditsRef.current = { ...pending };
+			setPendingEdits(pendingEditsRef.current);
+		}
+		if (Array.isArray(appended)) {
+			appendedRowsRef.current = appended;
+			setAppendedRows(appended);
+		}
+		if (Array.isArray(removed)) {
+			removedRowIdsRef.current = removed;
+			setRemovedRowIds(removed);
+		}
+		if (Array.isArray(nextColumns) && nextColumns.length) {
+			refreshColumnsRef.current = nextColumns;
+			setRefreshColumns(nextColumns);
+		}
+		const cells = Array.isArray(highlights?.cells) ? highlights.cells : [];
+		const rowIndexes = Array.isArray(highlights?.rowIndexes)
 			? highlights.rowIndexes
 			: [];
-		if (cells.length === 0 && rowIndexes.length === 0) return;
-		setHighlightedCells(cells);
-		const firstIndex = rowIndexes[0] ?? cells[0]?.rowIndex;
-		if (firstIndex != null) {
-			setPage(
-				Math.max(1, Math.ceil(Number(firstIndex) / rowsPerPage))
-			);
+		if (cells.length || rowIndexes.length) {
+			setHighlightedCells(cells);
+			const firstIndex = rowIndexes[0] ?? cells[0]?.rowIndex;
+			if (firstIndex != null) {
+				landingIndexRef.current = Number(firstIndex);
+			}
+			scheduleHighlightClear(120000);
 		}
-		scheduleHighlightClear();
-	}, [location.state, rowsPerPage, scheduleHighlightClear]);
+	}, [location.state, scheduleHighlightClear]);
+
+	useEffect(() => {
+		const index = landingIndexRef.current;
+		if (index == null || !Number.isFinite(index) || isRowsLoading) return;
+		const totalPages = rowsData?.pagination?.totalPages || 1;
+		const target = Math.max(1, Math.ceil(index / rowsPerPage));
+		setPage(Math.min(target, totalPages));
+		landingIndexRef.current = null;
+	}, [rowsData?.pagination?.totalPages, rowsPerPage, isRowsLoading]);
 
 	const scheduleDuplicateHighlightClear = useCallback(() => {
 		if (duplicateHighlightTimeoutRef.current) {
@@ -565,6 +754,16 @@ const CopyMatrixPreview = () => {
 
 	const handleDeleteRowConfirm = async () => {
 		if (!deletingRow?._id) return;
+		if (String(deletingRow._id).startsWith("refresh-new-")) {
+			const next = appendedRowsRef.current.filter(
+				(row) => row.id !== String(deletingRow._id)
+			);
+			appendedRowsRef.current = next;
+			setAppendedRows(next);
+			setDeletingRow(null);
+			showSuccess("Row removed");
+			return;
+		}
 		try {
 			await deleteCopyMatrixRow({
 				id,
@@ -579,6 +778,29 @@ const CopyMatrixPreview = () => {
 	};
 
 	const handleCopyRow = async (row) => {
+		if (String(row?._id || "").startsWith("refresh-new-")) {
+			const source = appendedRowsRef.current.find(
+				(item) => item.id === String(row._id)
+			);
+			if (!source) return;
+			const nextIndex =
+				appendedRowsRef.current.reduce(
+					(max, item) => Math.max(max, Number(item.rowIndex) || 0),
+					0
+				) + 1;
+			const next = [
+				...appendedRowsRef.current,
+				{
+					id: `refresh-new-${Date.now()}`,
+					rowIndex: nextIndex,
+					rowData: { ...source.rowData },
+				},
+			];
+			appendedRowsRef.current = next;
+			setAppendedRows(next);
+			showSuccess("Row copied");
+			return;
+		}
 		try {
 			const result = await cloneCopyMatrixRow({
 				id,
@@ -781,6 +1003,11 @@ const CopyMatrixPreview = () => {
 				});
 				break;
 			case "rename-column":
+				if (protectedColumnsRef.current?.has(columnName)) {
+					blockedEditsRef.current.add(columnName);
+					reportBlockedColumns();
+					return;
+				}
 				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
 						"This column cannot be renamed because it is synced with an asset source"
@@ -791,6 +1018,11 @@ const CopyMatrixPreview = () => {
 				setHighlightedColumn(columnName);
 				break;
 			case "delete-column":
+				if (protectedColumnsRef.current?.has(columnName)) {
+					blockedDeletesRef.current.add(columnName);
+					reportBlockedColumns();
+					return;
+				}
 				if (!canModifyColumnStructure(columnName)) {
 					showWarning(
 						"This column cannot be deleted because it is synced with an asset source"
@@ -1303,6 +1535,12 @@ const CopyMatrixPreview = () => {
 	};
 
 	const handleColumnRenameSubmit = async (oldName, newName) => {
+		if (protectedColumnsRef.current?.has(oldName)) {
+			blockedEditsRef.current.add(oldName);
+			reportBlockedColumns();
+			setRenamingColumn(null);
+			return;
+		}
 		try {
 			await flushPendingEditsIfAny();
 			await renameColumn({ id, oldName, newName }).unwrap();
@@ -1344,14 +1582,22 @@ const CopyMatrixPreview = () => {
 		if (isSavingOp) return;
 		try {
 			const pendingMap = capturePendingEditsMap(pendingEditsRef, tableRef);
-			const hasPendingEdits = Object.keys(pendingMap).length > 0;
+			const inRefreshSession = refreshBaselineRef.current != null;
+			const draftEdits = inRefreshSession
+				? existingRowDraftMap(
+						pendingMap,
+						refreshBaselineRef.current,
+						userEditedExistingRowIdsRef.current
+					)
+				: pendingMap;
+			const hasPendingEdits = Object.keys(draftEdits).length > 0;
 			const nameChanged =
 				Boolean(displayName.trim()) &&
 				displayName.trim() !== String(matrix?.name || "").trim();
 			const hasChanges =
 				hasPendingEdits ||
-				hasSavedChangesRef.current ||
-				nameChanged;
+				nameChanged ||
+				(!inRefreshSession && hasSavedChangesRef.current);
 
 			if (!hasChanges) {
 				if (isDraft) {
@@ -1378,7 +1624,7 @@ const CopyMatrixPreview = () => {
 					_id: id,
 					name: displayName.trim() || matrix?.name || "Untitled",
 					isCreateDraft: isDraft,
-					pendingEdits: pendingMap,
+					pendingEdits: draftEdits,
 				});
 			}
 			setPendingEdits({});
@@ -1427,6 +1673,95 @@ const CopyMatrixPreview = () => {
 		navigate("/copy-matrix", { replace: true });
 	};
 
+	const collectSaveEdits = () => {
+		const edits = collectEdits();
+		const appended = appendedRowsRef.current.map((row) => ({
+			...row,
+			rowData: { ...(row.rowData || {}) },
+		}));
+		const real = [];
+		for (const edit of edits) {
+			if (String(edit._id).startsWith("refresh-new-")) {
+				const target = appended.find(
+					(row) => row.id === String(edit._id)
+				);
+				if (target) {
+					const rowData = { ...edit.rowData };
+					delete rowData[AUTO_ROW_ID_COLUMN];
+					target.rowData = { ...target.rowData, ...rowData };
+				}
+				continue;
+			}
+			real.push(edit);
+		}
+		appendedRowsRef.current = appended;
+		return real;
+	};
+
+	const buildRefreshSaveSteps = (realEdits) => {
+		const steps = [];
+		const known = new Set(
+			(matrix?.columns || []).map((column) =>
+				String(column || "").trim().toLowerCase()
+			)
+		);
+		for (const column of refreshColumnsRef.current || []) {
+			const name = String(column || "").trim();
+			if (!name || name === AUTO_ROW_ID_COLUMN) continue;
+			const key = name.toLowerCase();
+			if (known.has(key)) continue;
+			known.add(key);
+			steps.push({
+				path: `/copy-matrix/${id}/columns/add`,
+				method: "POST",
+				body: { columnName: name },
+				phase: "saving",
+			});
+		}
+		const removed = new Set(removedRowIdsRef.current.map(String));
+		const edits = (realEdits || []).filter(
+			(edit) => !removed.has(String(edit._id))
+		);
+		if (edits.length > 0) {
+			steps.push({
+				path: `/copy-matrix/${id}/rows`,
+				method: "PUT",
+				body: { rows: edits },
+				phase: "saving",
+			});
+		}
+		for (const rowId of removed) {
+			steps.push({
+				path: `/copy-matrix/${id}/rows/${rowId}`,
+				method: "DELETE",
+				body: {},
+				phase: "saving",
+			});
+		}
+		for (const row of appendedRowsRef.current) {
+			const rowData = { ...(row.rowData || {}) };
+			delete rowData._id;
+			delete rowData.rowIndex;
+			delete rowData[AUTO_ROW_ID_COLUMN];
+			steps.push({
+				path: `/copy-matrix/${id}/rows/add`,
+				method: "POST",
+				body: { rowData },
+				phase: "saving",
+			});
+		}
+		return steps;
+	};
+
+	const clearRefreshSession = () => {
+		appendedRowsRef.current = [];
+		removedRowIdsRef.current = [];
+		refreshColumnsRef.current = null;
+		setAppendedRows([]);
+		setRemovedRowIds([]);
+		setRefreshColumns(null);
+	};
+
 	const handlePrimaryAction = async () => {
 		if (isSavingOp || readOnly) return;
 		if (isDraft && !canFinishDraft) return;
@@ -1442,18 +1777,11 @@ const CopyMatrixPreview = () => {
 
 		try {
 			if (hasLinkedAssetSource) {
-				const edits = collectEdits();
+				const steps = buildRefreshSaveSteps(collectSaveEdits());
 
-				if (edits.length > 0) {
+				if (steps.length > 0) {
 					const result = await runJsonStepsWithProgress(
-						[
-							{
-								path: `/copy-matrix/${id}/rows`,
-								method: "PUT",
-								body: { rows: edits },
-								phase: "saving",
-							},
-						],
+						steps,
 						({ percent, phase }) => {
 							setSaveProgress(percent);
 							setSavePhase(phase);
@@ -1461,6 +1789,8 @@ const CopyMatrixPreview = () => {
 					);
 
 					setPendingEdits({});
+					pendingEditsRef.current = {};
+					clearRefreshSession();
 					const assetUploadId =
 						result?.data?.assetUploadId || matrix?.assetUploadId;
 					invalidateAfterSave(assetUploadId);
@@ -1484,17 +1814,7 @@ const CopyMatrixPreview = () => {
 				isRecreate ||
 				creatingNewAssetSource
 			) {
-				const steps = [];
-				const edits = collectEdits();
-
-				if (edits.length > 0) {
-					steps.push({
-						path: `/copy-matrix/${id}/rows`,
-						method: "PUT",
-						body: { rows: edits },
-						phase: "saving",
-					});
-				}
+				const steps = buildRefreshSaveSteps(collectSaveEdits());
 
 				const trimmedName = displayName.trim();
 				if (
@@ -1538,6 +1858,8 @@ const CopyMatrixPreview = () => {
 				});
 
 				setPendingEdits({});
+				pendingEditsRef.current = {};
+				clearRefreshSession();
 
 				const updated =
 					trimmedName && trimmedName !== matrix?.name
@@ -1567,16 +1889,7 @@ const CopyMatrixPreview = () => {
 			}
 
 			if (isDraft) {
-				const edits = collectEdits();
-				const steps = [];
-				if (edits.length > 0) {
-					steps.push({
-						path: `/copy-matrix/${id}/rows`,
-						method: "PUT",
-						body: { rows: edits },
-						phase: "saving",
-					});
-				}
+				const steps = buildRefreshSaveSteps(collectSaveEdits());
 				steps.push({
 					path: `/copy-matrix/${id}/finish`,
 					method: "POST",
@@ -1597,6 +1910,8 @@ const CopyMatrixPreview = () => {
 				);
 
 				setPendingEdits({});
+				pendingEditsRef.current = {};
+				clearRefreshSession();
 				invalidateAfterSave(result?.data?.assetUploadId);
 				showSuccess(result?.message || "Copy matrix saved");
 				goToCopyMatrixList();
@@ -1632,7 +1947,7 @@ const CopyMatrixPreview = () => {
 	}
 
 	return (
-		<div className="bg-white min-h-full">
+		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
 			<OperationProgressOverlay
 				visible={isSavingOp}
 				percent={saveProgress}
@@ -1640,8 +1955,9 @@ const CopyMatrixPreview = () => {
 				mode="save"
 				title="Saving copy matrix"
 			/>
-			<div className="bg-white px-8 py-4 border-b sticky top-0 z-50">
-				<div className="flex justify-between items-center">
+			<div className="shrink-0 border-b bg-[#F0E9FA] px-8 py-4">
+				<Breadcrumbs items={breadcrumbs} />
+				<div className="mt-2 flex justify-between items-center">
 					<div>
 						<h1 className="text-2xl font-bold text-[#413d42]">
 							Copy Matrix Preview
@@ -1672,7 +1988,7 @@ const CopyMatrixPreview = () => {
 				</div>
 			</div>
 
-			<div className="px-8 py-4 border-b bg-gray-50">
+			<div className="shrink-0 border-b bg-gray-50 px-8 py-4">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div
 						className={`flex min-h-10 flex-1 flex-wrap gap-x-8 gap-y-3 ${
@@ -1776,11 +2092,17 @@ const CopyMatrixPreview = () => {
 						</div>
 					)}
 				</div>
+				{columnGuardMessage ? (
+					<p className="mt-3 text-sm font-medium text-red-600">
+						{columnGuardMessage}
+					</p>
+				) : null}
 			</div>
 
-			<div className="px-6 py-4">
+			<div className="flex min-h-0 flex-1 flex-col px-6 pb-2 pt-3">
 				<EditableSheetTable
 					ref={tableRef}
+					fill
 					columns={columns}
 					rows={rows}
 					loading={loading}

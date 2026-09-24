@@ -51,6 +51,7 @@ const EditableSheetTable = forwardRef(
 			onRowEdit,
 			onRowCopy,
 			onRowDelete,
+			fill = false,
 		},
 		ref
 	) => {
@@ -377,11 +378,15 @@ const EditableSheetTable = forwardRef(
 			"sticky left-0 z-20 bg-red-50 shadow-[1px_0_0_0_#fecaca]";
 
 		return (
-			<>
+			<div className={fill ? "flex h-full min-h-0 flex-col" : undefined}>
 				<div
 					ref={scrollRef}
 					onScroll={handleScroll}
-					className="overflow-auto border border-gray-200 rounded-lg max-h-[calc(100vh-320px)]"
+					className={`overflow-auto border border-gray-200 rounded-lg ${
+						fill
+							? "min-h-0 flex-1"
+							: "max-h-[calc(100vh-320px)]"
+					}`}
 				>
 					<table className="w-max min-w-full text-sm text-left text-[#64748B] border-collapse table-fixed">
 						<thead
@@ -787,7 +792,7 @@ const EditableSheetTable = forwardRef(
 				</div>
 
 				{pagination && (
-					<div className="flex items-center justify-between mt-4">
+					<div className="mt-2 flex shrink-0 items-center justify-between">
 						<RowPerPage
 							value={rowsPerPage}
 							onChange={onRowsPerPageChange}
@@ -814,7 +819,7 @@ const EditableSheetTable = forwardRef(
 						</span>,
 						document.body
 					)}
-			</>
+			</div>
 		);
 	}
 );

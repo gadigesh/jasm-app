@@ -290,6 +290,7 @@ const assetUpload = api.injectEndpoints({
 				rowIds,
 				dryRun,
 				rowOverrides,
+				extraRows,
 			}) => ({
 				url: `/source/${id}/columns/update-images/apply`,
 				method: "POST",
@@ -302,6 +303,7 @@ const assetUpload = api.injectEndpoints({
 					rowIds,
 					dryRun,
 					rowOverrides,
+					extraRows,
 				},
 			}),
 			transformResponse: (response) => response.data,
@@ -495,18 +497,33 @@ const assetUpload = api.injectEndpoints({
 		}),
 
 		applyAssetSourceRefresh: builder.mutation({
-			query: (id) => ({
-				url: `/source/${id}/refresh/apply`,
-				method: "POST",
-			}),
+			query: (arg) => {
+				const id = arg && typeof arg === "object" ? arg.id : arg;
+				const body =
+					arg && typeof arg === "object"
+						? {
+								action: arg.action,
+								rowIndexes: arg.rowIndexes,
+								addedRowPatches: arg.addedRowPatches,
+							}
+						: {};
+				return {
+					url: `/source/${id}/refresh/apply`,
+					method: "POST",
+					body,
+				};
+			},
 			transformResponse: (response) => response.data,
-			invalidatesTags: (_r, _e, id) => [
-				{ type: "AssetUploads", id: "LIST" },
-				{ type: "AssetUploads", id },
-				{ type: "AssetSourceRows", id },
-				"AssetUploads",
-				"CopyMatrices",
-			],
+			invalidatesTags: (_r, _e, arg) => {
+				const id = arg && typeof arg === "object" ? arg.id : arg;
+				return [
+					{ type: "AssetUploads", id: "LIST" },
+					{ type: "AssetUploads", id },
+					{ type: "AssetSourceRows", id },
+					"AssetUploads",
+					"CopyMatrices",
+				];
+			},
 		}),
 	}),
 	overrideExisting: true,

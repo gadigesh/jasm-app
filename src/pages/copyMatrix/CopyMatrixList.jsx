@@ -28,7 +28,8 @@ import { showSuccess, showError } from "../../utils/toastMsg";
 import { downloadFromApi } from "../../utils/downloadCsv";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { resolveCopyMatrixEditPath } from "../../utils/copyMatrixHelpers";
-import { openRefreshReview } from "../../utils/copyMatrixRefresh";
+import { formatColumnStructureMessage } from "../../utils/copyMatrixRefresh";
+import CopyMatrixRefreshModal from "../../components/modals/copyMatrix/CopyMatrixRefreshModal";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { readActiveAccountId } from "../../utils/activeAccountStorage";
 import {
@@ -78,6 +79,8 @@ const CopyMatrixList = () => {
 	const [page, setPage] = useState(1);
 	const [rowsPerPage, setRowsPerPage] = useState(10);
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+	const [sourceTarget, setSourceTarget] = useState(null);
+	const [columnAlert, setColumnAlert] = useState("");
 	const [deleteTarget, setDeleteTarget] = useState(null);
 	const [cloneTarget, setCloneTarget] = useState(null);
 	const [draftPrompt, setDraftPrompt] = useState(null);
@@ -103,6 +106,7 @@ const CopyMatrixList = () => {
 		useCloneCopyMatrixMutation();
 	const [refreshCopyMatrix] = useRefreshCopyMatrixMutation();
 	const [refreshingId, setRefreshingId] = useState(null);
+	const [refreshWindow, setRefreshWindow] = useState(null);
 
 	const filteredAndSortedData = useMemo(() => {
 		if (!matrices) return [];
@@ -117,6 +121,9 @@ const CopyMatrixList = () => {
 				item.historicalMappedAssetSourceNames || [],
 			canRecreateAssetSource: Boolean(item.canRecreateAssetSource),
 			canRefresh: item.canRefresh !== false,
+			inputType: item.inputType || "file",
+			fileType: item.fileType || "",
+			fileRef: item.fileRef || "",
 			rawStatus: item.rawStatus || null,
 			updatedAt: item.updatedAt,
 			displayDate: formatListDate(item.updatedAt),
@@ -208,20 +215,61 @@ const CopyMatrixList = () => {
 	const handleRefresh = async (row) => {
 		if (!row?._id || refreshingId) return;
 		setRefreshingId(row._id);
+		setColumnAlert("");
 		try {
 			const review = await refreshCopyMatrix(row._id).unwrap();
 			if (!review?.hasChanges) {
 				showSuccess("Copy matrix is already up to date");
 				return;
 			}
-			openRefreshReview(navigate, row._id, review);
+			setRefreshWindow({
+				id: row._id,
+				review,
+				columnMessage: "",
+				token: Date.now(),
+			});
 		} catch (error) {
+			const structureMessage = formatColumnStructureMessage(
+				error?.data || {}
+			);
+			if (
+				error?.data?.deletedColumns?.length ||
+				error?.data?.editedColumns?.length
+			) {
+				setColumnAlert("");
+				setRefreshWindow({
+					id: row._id,
+					review: { name: row.name, unsyncedRows: [] },
+					columnMessage: structureMessage,
+					token: Date.now(),
+				});
+				return;
+			}
 			showError(
 				getApiErrorMessage(error, "Failed to refresh copy matrix")
 			);
 		} finally {
 			setRefreshingId(null);
 		}
+	};
+
+	const handleCopyLink = async (row) => {
+		const link = String(row?.fileRef || "").trim();
+		if (!link) {
+			showError("No Google Sheet link is available");
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(link);
+			showSuccess("Link copied");
+		} catch {
+			showError("Could not copy the link");
+		}
+	};
+
+	const handleUploadSource = (row) => {
+		setColumnAlert("");
+		setSourceTarget(row);
 	};
 
 	const goToView = (row) => {
@@ -434,6 +482,11 @@ const CopyMatrixList = () => {
 			/>
 
 			<div className="min-h-0 flex-1 flex flex-col">
+				{columnAlert ? (
+					<p className="mx-6 mb-2 text-sm font-medium text-red-600">
+						{columnAlert}
+					</p>
+				) : null}
 				<ListTable
 					columns={columns}
 					rows={pagedRows}
@@ -447,6 +500,8 @@ const CopyMatrixList = () => {
 					onDelete={(row) => setDeleteTarget(row)}
 					onClone={(row) => setCloneTarget(row)}
 					onRefresh={handleRefresh}
+					onCopyLink={handleCopyLink}
+					onUpload={handleUploadSource}
 					refreshingId={refreshingId}
 					tooltips={{
 						edit: "Edit copy matrix",
@@ -455,9 +510,11 @@ const CopyMatrixList = () => {
 						delete: "Delete copy matrix",
 						clone: "Clone copy matrix",
 						refresh: "Refresh from source",
+						copyLink: "Copy link",
+						upload: "Upload",
 					}}
 				/>
-				<div className="px-6">
+				<div className="px-6 py-3">
 					<div className="flex items-center justify-between">
 						<RowPerPage value={rowsPerPage} onChange={setRowsPerPage} />
 						<Pagination
@@ -469,10 +526,74 @@ const CopyMatrixList = () => {
 				</div>
 			</div>
 
+			<CopyMatrixRefreshModal
+				isOpen={Boolean(refreshWindow)}
+				matrixId={refreshWindow?.id}
+				openToken={refreshWindow?.token}
+				review={refreshWindow?.review}
+				columnMessage={refreshWindow?.columnMessage || ""}
+				onClose={() => setRefreshWindow(null)}
+				onApproved={(stage) => {
+					const matrixId = refreshWindow?.id;
+					setRefreshWindow(null);
+					if (!matrixId) return;
+					navigate(`/copy-matrix/${matrixId}/preview`, {
+						state: {
+							refreshHighlights: stage?.approvedHighlights,
+							refreshPendingEdits: stage?.pendingEdits || {},
+							refreshAppendedRows: stage?.appendedRows || [],
+							refreshRemovedRowIds: stage?.removedRowIds || [],
+							refreshColumns: stage?.columns || [],
+							skipEditDraft: true,
+						},
+					});
+				}}
+				onRejected={() => {
+					setRefreshWindow(null);
+					navigate("/copy-matrix");
+				}}
+			/>
+
 			<AddCopyMatrixUploadModal
-				isOpen={isUploadModalOpen}
-				onClose={() => setIsUploadModalOpen(false)}
+				isOpen={isUploadModalOpen || Boolean(sourceTarget)}
+				onClose={() => {
+					setIsUploadModalOpen(false);
+					setSourceTarget(null);
+				}}
 				accountId={activeAccountId}
+				copyMatrixId={sourceTarget?._id || null}
+				initialUrl={sourceTarget?.fileRef || ""}
+				onUpdated={(review) => {
+					const matrixId = sourceTarget?._id;
+					setSourceTarget(null);
+					setColumnAlert("");
+					if (!matrixId) return;
+					if (!review?.hasChanges) {
+						showSuccess("Copy matrix is already up to date");
+						return;
+					}
+					setRefreshWindow({
+						id: matrixId,
+						review,
+						columnMessage: "",
+						token: Date.now(),
+					});
+				}}
+				onColumnError={(message) => {
+					const target = sourceTarget;
+					if (!target?._id || !message) {
+						setColumnAlert(message || "");
+						return;
+					}
+					setColumnAlert("");
+					setSourceTarget(null);
+					setRefreshWindow({
+						id: target._id,
+						review: { name: target.name, unsyncedRows: [] },
+						columnMessage: message,
+						token: Date.now(),
+					});
+				}}
 			/>
 
 			<CloneNameModal

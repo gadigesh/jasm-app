@@ -1,7 +1,7 @@
 const RowsPerPage = ({ value, onChange, className }) => {
 	return (
 		<div
-			className={`flex items-center gap-3 text-sm p-8 font-medium text-gray-700 ${className}`}
+			className={`flex items-center gap-2 text-sm font-medium text-gray-700 ${className}`}
 		>
 			<label htmlFor="rows-per-page">Show</label>
 			<div className="relative">
@@ -10,7 +10,7 @@ const RowsPerPage = ({ value, onChange, className }) => {
 					value={value}
 					aria-label="Rows per page"
 					onChange={(e) => onChange(Number(e.target.value))}
-					className="appearance-none border border-gray-300 rounded px-3 py-1.5 pr-8 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 focus:border-[#B600C9] cursor-pointer"
+					className="h-7 appearance-none rounded border border-gray-300 bg-white py-0 pl-2 pr-7 text-sm text-gray-900 focus:border-[#B600C9] focus:outline-none focus:ring-2 focus:ring-[#B600C9]/20 cursor-pointer"
 				>
 					<option value={10}>10</option>
 					<option value={20}>20</option>

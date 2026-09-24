@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { Pencil, Eye, Download, Trash, Copy, RefreshCw } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Pencil, Eye, Download, Trash, Copy, RefreshCw, Upload } from "lucide-react";
 import IconTooltip from "./IconTooltip";
 
 const alignClass = (align) => {
@@ -103,6 +104,130 @@ function RefreshActionButton({
 	);
 }
 
+function ViewOptionsButton({
+	row,
+	label,
+	onView,
+	onCopyLink,
+	onRowClick,
+}) {
+	const [open, setOpen] = useState(false);
+	const [position, setPosition] = useState({ top: 0, left: 0 });
+	const buttonRef = useRef(null);
+	const menuRef = useRef(null);
+
+	useEffect(() => {
+		if (!open) return undefined;
+
+		const close = (event) => {
+			if (buttonRef.current?.contains(event.target)) return;
+			if (menuRef.current?.contains(event.target)) return;
+			setOpen(false);
+		};
+
+		document.addEventListener("mousedown", close);
+		return () => document.removeEventListener("mousedown", close);
+	}, [open]);
+
+	const openView = () => {
+		if (onView) onView(row);
+		else onRowClick?.(row);
+	};
+
+	const hasSheetUrl = Boolean(String(row?.fileRef || "").trim());
+
+	if (!onCopyLink) {
+		return (
+			<IconTooltip label={label}>
+				<button
+					type="button"
+					aria-label={label}
+					className={iconButtonClass}
+					onClick={openView}
+				>
+					<Eye size={16} />
+				</button>
+			</IconTooltip>
+		);
+	}
+
+	const toggleMenu = () => {
+		const rect = buttonRef.current?.getBoundingClientRect();
+		if (rect) {
+			setPosition({
+				top: rect.bottom + 6,
+				left: rect.left + rect.width / 2,
+			});
+		}
+		setOpen((current) => !current);
+	};
+
+	return (
+		<>
+			<IconTooltip label={label}>
+				<button
+					ref={buttonRef}
+					type="button"
+					aria-label={label}
+					aria-expanded={open}
+					aria-haspopup="menu"
+					className={iconButtonClass}
+					onClick={toggleMenu}
+				>
+					<Eye size={16} />
+				</button>
+			</IconTooltip>
+			{open
+				? createPortal(
+						<div
+							ref={menuRef}
+							role="menu"
+							style={{
+								position: "fixed",
+								top: position.top,
+								left: position.left,
+								transform: "translateX(-50%)",
+								zIndex: 2147483646,
+							}}
+							className="min-w-[132px] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+						>
+							<button
+								type="button"
+								role="menuitem"
+								disabled={!hasSheetUrl}
+								aria-disabled={!hasSheetUrl}
+								className={`block w-full px-3 py-2 text-left text-sm ${
+									hasSheetUrl
+										? "text-gray-700 hover:bg-gray-50"
+										: "cursor-not-allowed text-gray-400"
+								}`}
+								onClick={() => {
+									if (!hasSheetUrl) return;
+									setOpen(false);
+									onCopyLink(row);
+								}}
+							>
+								Copy URL
+							</button>
+							<button
+								type="button"
+								role="menuitem"
+								className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+								onClick={() => {
+									setOpen(false);
+									openView();
+								}}
+							>
+								View CM
+							</button>
+						</div>,
+						document.body
+					)
+				: null}
+		</>
+	);
+}
+
 const ListTable = ({
 	columns = [],
 	rows = [],
@@ -115,6 +240,8 @@ const ListTable = ({
 	onDownload,
 	onClone,
 	onRefresh,
+	onCopyLink,
+	onUpload,
 	refreshingId = null,
 	tooltips = {},
 }) => {
@@ -128,6 +255,8 @@ const ListTable = ({
 		delete: "Delete",
 		clone: "Clone",
 		refresh: "Refresh from source",
+		copyLink: "Copy link",
+		upload: "Upload",
 		...tooltips,
 	};
 
@@ -220,14 +349,63 @@ const ListTable = ({
 										onClick={(e) => e.stopPropagation()}
 									>
 										<div className="flex justify-center items-center gap-3 text-gray-400">
-											{onRefresh && (
-												<RefreshActionButton
-													row={row}
-													label={labels.refresh}
-													refreshingId={refreshingId}
-													onRefresh={onRefresh}
-												/>
-											)}
+											{(() => {
+												const isGoogleSheet =
+													row.inputType === "gsheet" ||
+													row.fileType === "GSheet";
+												const showUploadInstead =
+													Boolean(onUpload) &&
+													!isGoogleSheet;
+
+												return (
+													<>
+														{onRefresh &&
+															!showUploadInstead && (
+																<RefreshActionButton
+																	row={row}
+																	label={
+																		labels.refresh
+																	}
+																	refreshingId={
+																		refreshingId
+																	}
+																	onRefresh={
+																		onRefresh
+																	}
+																/>
+															)}
+														{showUploadInstead &&
+															onUpload && (
+																<IconTooltip
+																	label={
+																		labels.upload
+																	}
+																>
+																	<button
+																		type="button"
+																		aria-label={
+																			labels.upload
+																		}
+																		className={
+																			iconButtonClass
+																		}
+																		onClick={() =>
+																			onUpload?.(
+																				row
+																			)
+																		}
+																	>
+																		<Upload
+																			size={
+																				16
+																			}
+																		/>
+																	</button>
+																</IconTooltip>
+															)}
+													</>
+												);
+											})()}
 											<IconTooltip label={labels.edit}>
 												<button
 													type="button"
@@ -238,20 +416,13 @@ const ListTable = ({
 													<Pencil size={16} />
 												</button>
 											</IconTooltip>
-											<IconTooltip label={labels.view}>
-												<button
-													type="button"
-													aria-label={labels.view}
-													className={iconButtonClass}
-													onClick={() =>
-														onView
-															? onView(row)
-															: onRowClick?.(row)
-													}
-												>
-													<Eye size={16} />
-												</button>
-											</IconTooltip>
+											<ViewOptionsButton
+												row={row}
+												label={labels.view}
+												onView={onView}
+												onCopyLink={onCopyLink}
+												onRowClick={onRowClick}
+											/>
 											<IconTooltip
 												label={labels.download}
 											>

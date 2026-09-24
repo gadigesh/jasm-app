@@ -141,7 +141,10 @@ const AssetSourceReviewChanges = () => {
 		setIsConfirming(true);
 		try {
 			if (review.copyMatrixRefresh) {
-				await applyAssetSourceRefresh(id).unwrap();
+				await applyAssetSourceRefresh({
+					id,
+					addedRowPatches: review.addedRowPatches || [],
+				}).unwrap();
 			}
 			if (edits.length > 0) {
 				await updateRows({ id, rows: edits }).unwrap();
