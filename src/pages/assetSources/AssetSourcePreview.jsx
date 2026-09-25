@@ -137,6 +137,8 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 	const hasSavedChangesRef = useRef(false);
 	const pendingEditsRef = useRef({});
 	const deletedRowsRef = useRef([]);
+	const sessionRowsRef = useRef([]);
+	const clonedColumnsRef = useRef([]);
 	const editUndoHistoryRef = useRef([]);
 	const editRedoHistoryRef = useRef([]);
 	const [editHistoryCounts, setEditHistoryCounts] = useState({
@@ -515,6 +517,8 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		setPendingEdits({});
 		pendingEditsRef.current = {};
 		deletedRowsRef.current = [];
+		sessionRowsRef.current = [];
+		clonedColumnsRef.current = [];
 		setRefreshAddedRows([]);
 		setRefreshRemovedRows([]);
 		setRefreshNewColumns([]);
@@ -612,6 +616,20 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					rowNumber: row.rowIndex || row._id,
 					rowData: row.rowData || {},
 				}));
+		}
+		if (Array.isArray(location.state?.resumeDeletedRows)) {
+			deletedRowsRef.current = location.state.resumeDeletedRows;
+		}
+		if (
+			location.state?.resumePendingEdits &&
+			typeof location.state.resumePendingEdits === "object"
+		) {
+			const next = {
+				...pendingEditsRef.current,
+				...location.state.resumePendingEdits,
+			};
+			pendingEditsRef.current = next;
+			setPendingEdits(next);
 		}
 		const cells = Array.isArray(highlights?.cells) ? [...highlights.cells] : [];
 		const rowIndexes = new Set(
@@ -780,11 +798,20 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			const normalize = (value) =>
 				normalizeCellText(value == null ? "" : String(value));
 
+			const sessionIds = new Set(
+				sessionRowsRef.current.map((row) => String(row._id))
+			);
+			const clonedColumnNames = new Set(
+				clonedColumnsRef.current.map((column) => column.column)
+			);
+
 			for (const edit of edits) {
+				if (sessionIds.has(String(edit._id))) continue;
 				const original = originalById.get(String(edit._id));
 				for (const [column, updatedValue] of Object.entries(
 					edit.rowData || {}
 				)) {
+					if (clonedColumnNames.has(column)) continue;
 					const previous = normalize(original?.[column]);
 					const updated = normalize(updatedValue);
 					if (previous === updated) continue;
@@ -805,6 +832,67 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 						previousValue: previous,
 						updatedValue: updated,
 						status,
+					});
+				}
+			}
+			for (const sessionRow of sessionRowsRef.current) {
+				const laterEdit = edits.find(
+					(edit) => String(edit._id) === String(sessionRow._id)
+				);
+				const rowData = {
+					...(sessionRow.rowData || {}),
+					...(laterEdit?.rowData || {}),
+				};
+				const columnNames = [
+					...columns.filter(
+						(column) => column && column !== AUTO_ROW_ID_COLUMN
+					),
+					...Object.keys(rowData).filter(
+						(column) =>
+							column &&
+							column !== AUTO_ROW_ID_COLUMN &&
+							column !== "_id" &&
+							column !== "rowIndex" &&
+							column !== "primaryKey" &&
+							!columns.includes(column)
+					),
+				];
+				const visibleColumns =
+					sessionRow.changeType === "row-clone"
+						? columnNames.filter((column) => normalize(rowData[column]))
+						: columnNames;
+				const fields = visibleColumns.length ? visibleColumns : columnNames;
+				for (const column of fields) {
+					changes.push({
+						rowId: String(sessionRow._id),
+						rowNumber: sessionRow.rowNumber,
+						column,
+						previousValue: "",
+						updatedValue: normalize(rowData[column]),
+						status:
+							sessionRow.changeType === "row-clone"
+								? "Cloned"
+								: "Added",
+						changeType: sessionRow.changeType,
+					});
+				}
+			}
+			for (const clonedColumn of clonedColumnsRef.current) {
+				for (const original of originalRows) {
+					const rowId = String(original._id || "");
+					if (!rowId || sessionIds.has(rowId)) continue;
+					changes.push({
+						rowId,
+						rowNumber:
+							original.rowIndex ?? original.primaryKey ?? rowId,
+						column: clonedColumn.column,
+						previousValue: "",
+						updatedValue: normalize(
+							original[clonedColumn.column] ||
+								original[clonedColumn.sourceColumn]
+						),
+						status: "Cloned",
+						changeType: "column-clone",
 					});
 				}
 			}
@@ -862,7 +950,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			}
 			return changes;
 		},
-		[getOriginalRowsForReview, refreshAddedRows]
+		[columns, getOriginalRowsForReview, refreshAddedRows]
 	);
 
 	const flushPendingEditsIfAny = async () => {
@@ -917,6 +1005,37 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		clearRowSelection();
 	};
 
+	const rememberSessionRow = (row, changeType) => {
+		const rowId = row?._id || row?.id;
+		if (!rowId) return;
+		const rowData = { ...(row.rowData || {}), ...row };
+		delete rowData._id;
+		delete rowData.id;
+		delete rowData.rowIndex;
+		delete rowData.primaryKey;
+		delete rowData.rowData;
+		sessionRowsRef.current = [
+			...sessionRowsRef.current.filter(
+				(item) => String(item._id) !== String(rowId)
+			),
+			{
+				_id: String(rowId),
+				rowNumber: row.rowIndex ?? row.primaryKey ?? String(rowId),
+				rowData,
+				changeType,
+			},
+		];
+	};
+
+	const rememberClonedColumn = (column, sourceColumn) => {
+		const name = String(column || "").trim();
+		if (!name) return;
+		clonedColumnsRef.current = [
+			...clonedColumnsRef.current.filter((item) => item.column !== name),
+			{ column: name, sourceColumn: sourceColumn || "" },
+		];
+	};
+
 	const handleAddRow = async () => {
 		if (isAddingRow) return;
 		try {
@@ -930,6 +1049,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				setHighlightedRowId(String(newRowId));
 				setHighlightedColumn(null);
 				scheduleHighlightClear();
+				rememberSessionRow(result?.row, "row-add");
 			}
 			setPage(targetPage);
 			hasSavedChangesRef.current = true;
@@ -976,6 +1096,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			if (newIndex != null) {
 				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
 			}
+			rememberSessionRow(newRow, "row-clone");
 			showSuccess("Row cloned");
 			hasSavedChangesRef.current = true;
 			closeSheetModal();
@@ -1064,6 +1185,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 			if (newIndex != null) {
 				setPage(Math.max(1, Math.ceil(Number(newIndex) / rowsPerPage)));
 			}
+			rememberSessionRow(newRow, "row-clone");
 			showSuccess("Row copied");
 			hasSavedChangesRef.current = true;
 		} catch (error) {
@@ -1084,6 +1206,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				next.add(newColumnName.trim());
 				return next;
 			});
+			rememberClonedColumn(newColumnName, sourceColumn);
 			hasSavedChangesRef.current = true;
 			showSuccess("Column cloned");
 			closeSheetModal();
@@ -1116,11 +1239,21 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 		setIsPreparingReview(true);
 		try {
 			const edits = collectEdits();
+			const pendingSnapshot = { ...pendingEditsRef.current };
+			for (const edit of edits) {
+				pendingSnapshot[String(edit._id)] = {
+					...pendingSnapshot[String(edit._id)],
+					...edit.rowData,
+				};
+			}
+			pendingEditsRef.current = pendingSnapshot;
 			const deletedRows = deletedRowsRef.current;
 			const copyMatrixRefresh = copyMatrixRefreshRef.current;
 			if (
 				edits.length === 0 &&
 				deletedRows.length === 0 &&
+				sessionRowsRef.current.length === 0 &&
+				clonedColumnsRef.current.length === 0 &&
 				!copyMatrixRefresh
 			) {
 				showSuccess(
@@ -1141,11 +1274,30 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 				assetName: displayName || asset?.name || "",
 				campaignName: asset?.copyMatrixName || "",
 				copyMatrixRefresh,
+				editorState: copyMatrixRefresh
+					? {
+							skipEditDraft: true,
+							copyMatrixRefresh: true,
+							refreshHighlights: { cells: highlightedCells },
+							refreshPendingEdits: pendingSnapshot,
+							refreshAddedRows,
+							refreshRemovedRows,
+							refreshNewColumns,
+							resumeDeletedRows: deletedRows,
+						}
+					: {
+							resumePendingEdits: Object.fromEntries(
+								Object.entries(pendingSnapshot).filter(
+									([rowId]) => !isCopyMatrixRefreshRowId(rowId)
+								)
+							),
+							resumeDeletedRows: deletedRows,
+						},
 			};
 			const pendingForReview = Object.fromEntries(
 				edits.map((edit) => [String(edit._id), edit.rowData])
 			);
-			if (accountId) {
+			if (accountId && !copyMatrixRefresh) {
 				writeEditDraft("as", accountId, {
 					_id: id,
 					name: displayName || asset?.name || "Untitled",
@@ -1336,6 +1488,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 					const created = result?.newColumnName || newColumnName;
 					setHighlightedColumn(created);
 					setRenamingColumn(created);
+					rememberClonedColumn(created, columnName);
 					showSuccess("Column cloned — rename the header");
 				} catch (error) {
 					showError(
@@ -2019,7 +2172,7 @@ const AssetSourcePreview = ({ readOnly = false }) => {
 
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
-			<div className="shrink-0 border-b bg-[#F0E9FA] px-8 py-4">
+			<div className="shrink-0 border-b bg-white px-8 py-4">
 				<Breadcrumbs items={breadcrumbs} />
 				<div className="mt-2 flex justify-between items-center">
 					<div>

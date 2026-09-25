@@ -59,6 +59,16 @@ const useBreadcrumbs = () => {
 				to: location.pathname,
 			});
 		}
+
+		const asReviewMatch = location.pathname.match(
+			/^\/asset-sources\/([^/]+)\/review$/
+		);
+		if (asReviewMatch) {
+			breadcrumbs.push({
+				label: "Review Changes",
+				to: location.pathname,
+			});
+		}
 	}
 
 	return breadcrumbs;

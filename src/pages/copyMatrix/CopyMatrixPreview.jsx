@@ -1955,7 +1955,7 @@ const CopyMatrixPreview = () => {
 				mode="save"
 				title="Saving copy matrix"
 			/>
-			<div className="shrink-0 border-b bg-[#F0E9FA] px-8 py-4">
+			<div className="shrink-0 border-b bg-white px-8 py-4">
 				<Breadcrumbs items={breadcrumbs} />
 				<div className="mt-2 flex justify-between items-center">
 					<div>

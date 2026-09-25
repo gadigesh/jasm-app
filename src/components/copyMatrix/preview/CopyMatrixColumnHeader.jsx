@@ -44,7 +44,7 @@ const CopyMatrixColumnHeader = forwardRef(
 			? "bg-yellow-100"
 			: hasActiveFilter
 			? "bg-violet-100"
-			: "bg-gray-50";
+			: "bg-[#F0E9FA]";
 
 		useEffect(() => {
 			if (!isRenaming) return;

@@ -36,7 +36,7 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 				type="button"
 				onClick={toggleSidebar}
 				aria-label={isOpen ? "Collapse sidebar" : "Expand sidebar"}
-				className="absolute -right-3 top-6 bg-white border border-[#EEF2F6] rounded-full p-1 shadow-sm z-50 text-gray-500 hover:text-[#B600C9] transition-transform duration-300"
+				className="absolute -right-3 top-6 bg-white border border-[#EEF2F6] rounded-full p-1 shadow-sm z-50 text-gray-500 hover:text-[#751FD4] transition-transform duration-300"
 			>
 				{isOpen ? (
 					<ChevronLeft size={16} />
@@ -69,7 +69,7 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 					onClick={() => handleNavigate("DASHBOARD")}
 					className={`w-full flex items-center px-4 py-2 rounded-lg transition-all duration-300 ${
 						isDashboard
-							? "bg-[#B600C9] text-white"
+							? "bg-[#B789E3] text-white"
 							: "text-[#64748B] hover:bg-gray-150"
 					}`}
 					aria-label="Dashboard"
@@ -95,7 +95,7 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 					disabled={isDashboard}
 					className={`w-full text-xs flex items-center px-4 py-2 rounded-lg transition-all duration-300 ${
 						isAssetSource
-							? "bg-[#B600C9] text-white"
+							? "bg-[#B789E3] text-white"
 							: isDashboard
 							? "text-gray-300 cursor-not-allowed opacity-50"
 							: "text-[#64748B] hover:bg-gray-150"
@@ -122,7 +122,7 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 					onClick={() => handleNavigate("SETTINGS")}
 					className={`w-full flex items-center px-4 py-2 rounded-lg transition-all duration-300 ${
 						isSettings
-							? "bg-[#B600C9] text-white"
+							? "bg-[#B789E3] text-white"
 							: "text-[#64748B] hover:bg-gray-150"
 					}`}
 					aria-label="Settings"
@@ -146,7 +146,7 @@ const Sidebar = ({ onLogout, isOpen = true, toggleSidebar }) => {
 				<button
 					type="button"
 					onClick={onLogout}
-					className="w-full flex items-center px-4 py-2 text-[#94A3B8] hover:text-[#B600C9] transition-all duration-300"
+					className="w-full flex items-center px-4 py-2 text-[#94A3B8] hover:text-[#751FD4] transition-all duration-300"
 					aria-label="Logout"
 					title={!isOpen ? "Logout" : ""}
 				>

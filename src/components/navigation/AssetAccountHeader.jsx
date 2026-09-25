@@ -12,7 +12,7 @@ const AssetAccountHeader = ({ breadcrumbs = [], actions = [] }) => {
 	const showViewTabs = LISTING_PATHS.includes(pathname);
 
 	return (
-		<div className="sticky top-0 z-50 border-b bg-[#F0E9FA] px-8 py-2">
+		<div className="sticky top-0 z-50 border-b bg-white px-8 py-2">
 			<Breadcrumbs items={breadcrumbs} />
 			<h1 className="sr-only">{title}</h1>
 

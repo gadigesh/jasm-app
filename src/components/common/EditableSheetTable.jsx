@@ -362,8 +362,8 @@ const EditableSheetTable = forwardRef(
 			!readOnly && (onRowEdit || onRowCopy || onRowDelete);
 		const stickySecondLeft = showCheckboxes ? "left-[40px]" : "left-0";
 		const stickyCheckboxClass =
-			"sticky left-0 z-40 bg-gray-50 shadow-[1px_0_0_0_#e5e7eb]";
-		const stickyRowRefClass = `sticky ${stickySecondLeft} z-30 bg-gray-50 shadow-[1px_0_0_0_#e5e7eb]`;
+			"sticky left-0 z-40 bg-[#F0E9FA] shadow-[1px_0_0_0_#e5e7eb]";
+		const stickyRowRefClass = `sticky ${stickySecondLeft} z-30 bg-[#F0E9FA] shadow-[1px_0_0_0_#e5e7eb]`;
 		const stickyCheckboxCellClass =
 			"sticky left-0 z-20 bg-white shadow-[1px_0_0_0_#f3f4f6]";
 		const stickyRowRefCellClass = `sticky ${stickySecondLeft} z-10 bg-white shadow-[1px_0_0_0_#f3f4f6]`;
@@ -390,7 +390,7 @@ const EditableSheetTable = forwardRef(
 				>
 					<table className="w-max min-w-full text-sm text-left text-[#64748B] border-collapse table-fixed">
 						<thead
-							className={`bg-gray-50 border-b border-gray-200 ${
+							className={`border-b border-gray-200 bg-[#F0E9FA] ${
 								scrolled ? "shadow-sm" : ""
 							}`}
 						>
@@ -494,7 +494,7 @@ const EditableSheetTable = forwardRef(
 											className={`relative px-4 py-3 font-medium text-xs whitespace-nowrap sticky top-0 z-20 border-b border-gray-200 ${
 												isColHighlighted
 													? "bg-yellow-100"
-													: "bg-gray-50"
+													: "bg-[#F0E9FA]"
 											} ${isSticky ? stickyRowRefClass : ""}`}
 										>
 											<span className="pr-2">{col}</span>
@@ -519,7 +519,7 @@ const EditableSheetTable = forwardRef(
 									);
 								})}
 								{showRowActions && (
-									<th className="sticky right-0 top-0 z-40 w-[104px] min-w-[104px] border-b border-gray-200 bg-gray-50 px-2 py-3 text-center text-xs font-medium">
+									<th className="sticky right-0 top-0 z-40 w-[104px] min-w-[104px] border-b border-gray-200 bg-[#F0E9FA] px-2 py-3 text-center text-xs font-medium">
 										Actions
 									</th>
 								)}
